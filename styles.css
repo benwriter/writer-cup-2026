@@ -574,3 +574,26 @@ body.photo-modal-open { overflow:hidden; }
   .stepper button { width:50px; height:52px; }
   .stepper input { width:56px; height:52px; }
 }
+
+
+/* V5.1.1 · score-hole navigation polish */
+.hole-selector button {
+  width:54px; height:54px; border-radius:15px; font-size:1.7rem; font-weight:900; line-height:1;
+  touch-action:manipulation; user-select:none; -webkit-user-select:none;
+  background:#F4F5F1; color:#001638; border:1px solid rgba(0,22,56,.12);
+}
+.hole-selector button:disabled { opacity:.34; }
+@media (max-width: 360px) {
+  .hole-selector button { width:50px; height:52px; }
+}
+
+/* V5.1.2 · Home shortcut icons match bottom navigation */
+.quick-card[data-route="live"] > span {
+  color: #376748;
+}
+.quick-card[data-route="score"] > span {
+  color: #C49335;
+  font-size: 1.38rem;
+  transform: translateY(-1px);
+  display: inline-block;
+}

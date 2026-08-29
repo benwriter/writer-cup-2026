@@ -1,4 +1,4 @@
-const CACHE = "writer-cup-2026-v5-1";
+const CACHE = "writer-cup-2026-v512";
 const ASSETS = ["./","./index.html","./styles.css","./app.js","./manifest.json","./config.js","./data.js","./assets/writer-cup-logo.png","./assets/icon-192.png","./assets/icon-512.png"];
 self.addEventListener("install", e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())));
 self.addEventListener("activate", e => e.waitUntil(Promise.all([
