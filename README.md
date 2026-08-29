@@ -1,43 +1,58 @@
-# Writer Cup 2026 App — V4
+# Writer Cup 2026 App — V5
 
-V4 turns the Writer Cup app from a live scorer into a full tournament companion.
+V5 is the polished tournament-day release of the Writer Cup companion app.
 
-## Included
+## Tournament scoring
 - Live 4-point Writer Cup scoring with Supabase Realtime
-- Foursomes, Four-Ball and Singles Stableford match-play logic
+- Holes 1–6: Foursomes / Alternate Shot
+- Holes 7–12: Four-Ball Match Play
+- Holes 13–18: Singles Stableford Match Play
 - Official White Tee distances and stroke indexes for all 18 holes
-- Hole 4 NTP and Hole 14 Longest Drive
+- Tournament-day Daily Handicaps automatically feed the Stableford calculations
+- Hole 4 Nearest to the Pin and Hole 14 Longest Drive
+- Clear Saved Scores action for correcting an accidentally saved hole
 - Offline score queue / local backup
-- Scorer PIN for score and tournament-control changes
-- Public player profiles for Ben, Joel, Dylan and Brent
-- Scorer-controlled profile title, biography and photo upload
-- Shared general notes and hole-by-hole player notes with no note PIN
-- Per-device “This phone belongs to” selector to make one player’s note box editable
-- 18-hole Course Guide with:
-  - par, White Tee distance and stroke index
-  - current Writer Cup format
-  - course strategy
-  - Writer Cup match strategy
-  - danger notes
-  - current local-rule reminders
-  - shared notes from all four players
-  - official Coast hole-page link
-  - jump straight from guide to scoring
-- Tournament-weather framework using Open-Meteo:
-  - before tournament week: “Forecast opens 7 days out”
-  - within seven days: temperature, rain chance, dominant wind, max wind and gusts
-  - Little Bay / The Coast coordinates are preconfigured
-- Full scorecard moved into Tournament HQ
-- Official Writer Cup rules remain in the app
 
-## Permissions
-- Anyone can view scores, profiles, course guide and notes.
-- Shared player notes deliberately do not use a PIN.
-- Profile biography/photo editing uses the scorer PIN.
-- Live score/tournament changes use the scorer PIN.
+## Score access
+- Everyone can open the Score tab and browse the live scores in read-only mode
+- Spectators can move through previous/current holes and see Stableford previews and match results
+- Scorer PIN unlocks score editing for that browser session
+- Save, clear, side-competition changes and tournament controls remain PIN protected server-side
 
-## Weather
-The tournament forecast is fetched from Open-Meteo only when the event is within the seven-day window. The app remains usable if weather is unavailable.
+## Hole 14 tee-order draw
+- Scorer-controlled random draw of all four positions 1–4
+- First player is clearly highlighted
+- Draw is saved live through Supabase so every device sees the same official order
+- A redraw requires scorer control and confirmation
+- The order appears in both the scoring screen and Hole 14 Course Guide
+
+## Player profiles
+- Ben Writer
+- Joel Ryan
+- Dylan Allen
+- Brent Rogers
+- Full player photos, biographies and profile titles
+- Once a photo is uploaded it automatically replaces the initials avatar
+- Initials remain the fallback only: BW, JR, DA and BR
+- Profile photos can be tapped to view full-screen
+
+## Player notes
+- Everyone can read all four players' general and hole notes
+- Each phone can choose its player under “This phone belongs to”
+- Only that player's notes are editable on that phone
+- Notes do not require a separate player PIN/login
+
+## Course and tournament hub
+- 18-hole Course Guide with strategy, danger notes and local-rule reminders
+- Live weather framework for tournament week
+- Full scorecard
+- Official Writer Cup rules
+- White / navy / gold / green Writer Cup visual theme
+- Green Live icon and enlarged gold Score pencil in the bottom navigation
 
 ## Deployment
-This is still a static PWA and can be deployed to Vercel once the GitHub repository is ready.
+This is a static PWA. Upload the contents to the GitHub repository root, then deploy through Vercel. The `supabase` folder is source/backup material and is not required by the browser at runtime.
+
+
+## V5.1
+Singles holes 13–18 now display shots received and Stableford points beneath each gross score. The + / − controls are larger for mobile scoring. Singles winner logic remains hole-by-hole Stableford match play.

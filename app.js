@@ -26,6 +26,7 @@ let state = loadState();
 let route = "home";
 let selectedPlayerId = localStorage.getItem("writerCupSelectedProfile") || "ben";
 let selectedCourseHole = Number(localStorage.getItem("writerCupSelectedCourseHole") || state.currentHole || 1);
+let scoreBrowseHole = null;
 let realtimeChannel = null;
 let syncInFlight = false;
 
@@ -72,6 +73,11 @@ function getHoleScore(hole) { return state.scores[hole] || {}; }
 function foursomesTeePlayers(hole) { return hole % 2 ? "Ben & Dylan tee off" : "Joel & Brent tee off"; }
 function playerNameFromId(id) { return Object.keys(tournament.players).find(n => tournament.players[n].id === id) || ""; }
 function playerIdFromName(name) { return tournament.players[name]?.id || ""; }
+function displayNameForKey(name) {
+  const base=tournament.players[name]||{};
+  const remote=base.id?state.profiles[base.id]:null;
+  return remote?.display_name || base.full_name || name;
+}
 function playerTeamKey(id) {
   const name = playerNameFromId(id);
   return tournament.players[name]?.team || "";
@@ -81,7 +87,7 @@ function profileFor(id) {
   const base = tournament.players[name] || {};
   return {
     id,
-    display_name: name || id,
+    display_name: base.full_name || name || id,
     initials: base.initials || "?",
     team_id: tournament.teams[base.team]?.id || "",
     profile_title: "",
@@ -385,8 +391,24 @@ function weatherCard(){
   return `<section class="card weather-card weather-locked"><div class="eyebrow">TOURNAMENT WEATHER</div><strong>Loading conditions…</strong></section>`;
 }
 function playerAvatar(profile,large=false){
-  if(profile.photo_url)return `<img class="profile-photo ${large?"large":""}" src="${escapeHTML(profile.photo_url)}" alt="${escapeHTML(profile.display_name)}" />`;
+  if(profile.photo_url){
+    const img=`<img class="profile-photo ${large?"large":""}" src="${escapeHTML(profile.photo_url)}" alt="${escapeHTML(profile.display_name)}" />`;
+    if(large)return `<button type="button" class="profile-photo-zoom" data-fullscreen-photo="${escapeHTML(profile.photo_url)}" data-photo-name="${escapeHTML(profile.display_name)}" aria-label="View ${escapeHTML(profile.display_name)} photo full screen">${img}<span>Tap to enlarge</span></button>`;
+    return img;
+  }
   return `<div class="avatar ${large?"avatar-large":""}">${escapeHTML(profile.initials||"?")}</div>`;
+}
+function closePhotoModal(){
+  document.querySelector(".photo-modal")?.remove();
+  document.body.classList.remove("photo-modal-open");
+}
+function openPhotoModal(url,name){
+  closePhotoModal();
+  document.body.insertAdjacentHTML("beforeend",`<div class="photo-modal" role="dialog" aria-modal="true" aria-label="${escapeHTML(name)} profile photo"><button class="photo-modal-close" type="button" aria-label="Close photo">×</button><div class="photo-modal-stage"><img src="${escapeHTML(url)}" alt="${escapeHTML(name)} profile photo"><strong>${escapeHTML(name)}</strong><small>Tap outside the photo to close</small></div></div>`);
+  document.body.classList.add("photo-modal-open");
+  const modal=document.querySelector(".photo-modal");
+  modal.querySelector(".photo-modal-close").onclick=closePhotoModal;
+  modal.onclick=e=>{if(e.target===modal)closePhotoModal();};
 }
 
 function homeView(){
@@ -406,12 +428,12 @@ function homeView(){
       <div class="stage-strip"><div class="stage ${state.currentHole<=6?"active":""}"><small>Holes 1–6 · 1 pt</small><strong>Foursomes</strong></div><div class="stage ${state.currentHole>=7&&state.currentHole<=12?"active":""}"><small>Holes 7–12 · 1 pt</small><strong>Four-Ball</strong></div><div class="stage ${state.currentHole>=13?"active":""}"><small>Holes 13–18 · 2 pts</small><strong>Singles</strong></div></div>
     </section>
     <div class="section-title"><h2>Jump in</h2><span>Everything for the day</span></div>
-    <div class="quick-grid"><button class="quick-card" data-route="score"><span>✎</span><strong>Enter score</strong><small>PIN protected</small></button><button class="quick-card" data-route="live"><span>●</span><strong>Live match</strong><small>Realtime updates</small></button><button class="quick-card" data-route="course"><span>⛳</span><strong>Course guide</strong><small>18-hole caddie plan</small></button><button class="quick-card" data-route="players"><span>🏌️</span><strong>Players</strong><small>Profiles + notes</small></button></div>
+    <div class="quick-grid"><button class="quick-card" data-route="score"><span>✎</span><strong>Scores</strong><small>Live · scorer unlock</small></button><button class="quick-card" data-route="live"><span>●</span><strong>Live match</strong><small>Realtime updates</small></button><button class="quick-card" data-route="course"><span>⛳</span><strong>Course guide</strong><small>18-hole caddie plan</small></button><button class="quick-card" data-route="players"><span>🏌️</span><strong>Players</strong><small>Profiles + notes</small></button></div>
     <div class="section-title"><h2>The field</h2><span>Tap a player</span></div>
     <div class="player-grid">${Object.keys(tournament.players).map(name=>playerCard(profileFor(tournament.players[name].id))).join("")}</div>`;
 }
 function playerCard(p){
-  const team=formatTeamNameById(p.team_id),hcp=state.dailyHandicaps[p.display_name];
+  const team=formatTeamNameById(p.team_id),key=playerNameFromId(p.id),hcp=state.dailyHandicaps[key];
   return `<button class="card player-card player-button" data-player="${p.id}">${playerAvatar(p)}<strong>${escapeHTML(p.display_name)}</strong><small>${escapeHTML(p.profile_title||"Player profile")}</small><small>Daily HCP: ${Number.isFinite(hcp)?hcp:"TBC"}</small><small class="team-label">${escapeHTML(team)}</small></button>`;
 }
 function progressBars(results){return results.map(r=>`<i class="${r||""}"></i>`).join("");}
@@ -426,41 +448,59 @@ function liveView(){
     <section class="card segment-card"><div class="segment-head"><strong>Joel v Brent</strong><span>Singles · 1 pt</span></div><div class="segment-status">${cup.joelBrent.status}</div><div class="progress">${progressBars(resultsFor("joelBrent"))}</div></section>
     <button class="secondary-button" id="manualRefresh">REFRESH LIVE DATA</button>`;
 }
-function stepper(id,label,detail,value){
-  return `<div class="score-input-row"><div class="score-input-copy"><strong>${label}</strong><small>${detail}</small></div><div class="stepper"><button data-step="${id}" data-delta="-1">−</button><input id="${id}" inputmode="numeric" pattern="[0-9]*" value="${value??""}" placeholder="–"><button data-step="${id}" data-delta="1">+</button></div></div>`;
+function stepper(id,label,detail,value,readOnly=false,stablefordLine=""){
+  return `<div class="score-input-row ${readOnly?"read-only":""}"><div class="score-input-copy"><strong>${label}</strong><small>${detail}</small></div><div class="score-control-stack"><div class="stepper"><button data-step="${id}" data-delta="-1" ${readOnly?"disabled":""} aria-label="Decrease ${escapeHTML(label)} score">−</button><input id="${id}" inputmode="numeric" pattern="[0-9]*" value="${value??""}" placeholder="–" ${readOnly?"readonly":""} aria-label="${escapeHTML(label)} gross score"><button data-step="${id}" data-delta="1" ${readOnly?"disabled":""} aria-label="Increase ${escapeHTML(label)} score">+</button></div>${stablefordLine?`<small class="stableford-under-score" id="sf-${id}">${stablefordLine}</small>`:""}</div></div>`;
 }
 function stablefordPreview(name,hole,gross){
-  if(!Number.isFinite(gross)||!Number.isFinite(state.dailyHandicaps[name]))return"";
-  const strokes=stablefordStrokesReceived(state.dailyHandicaps[name],hole.si),pts=stablefordPoints(gross,hole.par,state.dailyHandicaps[name],hole.si);
-  return `${strokes} shot${strokes===1?"":"s"} · ${pts} Stableford pt${pts===1?"":"s"}`;
+  if(!Number.isFinite(state.dailyHandicaps[name]))return"Daily HCP required";
+  const strokes=stablefordStrokesReceived(state.dailyHandicaps[name],hole.si);
+  if(!Number.isFinite(gross)||gross<=0)return `${strokes} shot${strokes===1?"":"s"} received · points pending`;
+  const pts=stablefordPoints(gross,hole.par,state.dailyHandicaps[name],hole.si);
+  return `${strokes} shot${strokes===1?"":"s"} received · ${pts} Stableford pt${pts===1?"":"s"}`;
 }
-function specialCompetitionPanel(hole){
-  if(hole.n===4)return `<div class="special-panel"><strong>🎯 Hole 4 · Nearest to the Pin</strong><span>All four players hit. Joel & Brent remain the live Foursomes tee balls. Ben & Dylan are NTP-only.</span><select id="ntpWinnerSelect"><option value="">NTP winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option ${state.sideGames.ntpWinner===p?"selected":""}>${p}</option>`).join("")}<option value="No winner" ${state.sideGames.ntpWinner==="No winner"?"selected":""}>No qualifying ball</option></select><input id="ntpDistanceInput" placeholder="Optional distance, e.g. 2.4 m" value="${escapeHTML(state.sideGames.ntpDistance)}"></div>`;
-  if(hole.n===14)return `<div class="special-panel"><strong>🚀 Hole 14 · Longest Drive</strong><span>Normal Singles tee shots. Ball must finish on the fairway. Hitting order is random.</span><div class="draw-order">${state.sideGames.driveOrder.length?state.sideGames.driveOrder.map((p,i)=>`<b>${i+1}. ${p}</b>`).join(""):"Draw not completed"}</div><button class="secondary-button compact" id="drawOrder">RANDOMISE HITTING ORDER</button><select id="longestWinnerSelect"><option value="">Longest Drive winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option ${state.sideGames.longestWinner===p?"selected":""}>${p}</option>`).join("")}<option value="No winner" ${state.sideGames.longestWinner==="No winner"?"selected":""}>Nobody hit the fairway</option></select></div>`;
+function refreshStablefordUnderScore(name,hole){
+  const out=document.getElementById(`sf-${name}`),input=document.getElementById(name);
+  if(!out||!input)return;
+  const gross=input.value===""?undefined:Number(input.value);
+  out.textContent=stablefordPreview(name,hole,gross);
+}
+function specialCompetitionPanel(hole,readOnly=false){
+  if(hole.n===4)return `<div class="special-panel"><strong>🎯 Hole 4 · Nearest to the Pin</strong><span>All four players hit. Joel & Brent remain the live Foursomes tee balls. Ben & Dylan are NTP-only.</span><select id="ntpWinnerSelect" ${readOnly?"disabled":""}><option value="">NTP winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option ${state.sideGames.ntpWinner===p?"selected":""}>${p}</option>`).join("")}<option value="No winner" ${state.sideGames.ntpWinner==="No winner"?"selected":""}>No qualifying ball</option></select><input id="ntpDistanceInput" placeholder="Optional distance, e.g. 2.4 m" value="${escapeHTML(state.sideGames.ntpDistance)}" ${readOnly?"readonly":""}></div>`;
+  if(hole.n===14)return `<div class="special-panel"><strong>🚀 Hole 14 · Longest Drive</strong><span>Normal Singles tee shots. Ball must finish on the fairway. The official 1–4 tee order is drawn at random.</span><div class="draw-order">${state.sideGames.driveOrder.length?state.sideGames.driveOrder.map((p,i)=>`<b class="${i===0?"first-draw":""}">${i+1}. ${escapeHTML(displayNameForKey(p))}${i===0?" · TEES OFF FIRST":""}</b>`).join(""):"Draw not completed"}</div>${readOnly?"":'<button class="secondary-button compact" id="drawOrder">🎲 DRAW TEE ORDER 1–4</button>'}<select id="longestWinnerSelect" ${readOnly?"disabled":""}><option value="">Longest Drive winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option value="${p}" ${state.sideGames.longestWinner===p?"selected":""}>${escapeHTML(displayNameForKey(p))}</option>`).join("")}<option value="No winner" ${state.sideGames.longestWinner==="No winner"?"selected":""}>Nobody hit the fairway</option></select></div>`;
   return"";
 }
 function scoreView(){
-  const hole=tournament.holes[state.currentHole-1],fmt=fmtForHole(hole.n),s=getHoleScore(hole.n);
+  const canEdit=Boolean(scorerPin());
+  const holeNumber=canEdit?state.currentHole:(scoreBrowseHole||state.currentHole);
+  const hole=tournament.holes[holeNumber-1],fmt=fmtForHole(hole.n),s=getHoleScore(hole.n);
+  const hasSaved=Object.keys(s).length>0;
   let inputs="";
-  if(fmt.key==="foursomes")inputs=stepper("bj","Berkeley Jail","One team score · Ben + Joel",s.bj)+stepper("is","Itchy & Scratchy","One team score · Dylan + Brent",s.is);
+  if(fmt.key==="foursomes")inputs=stepper("bj","Berkeley Jail","One team score · Ben + Joel",s.bj,!canEdit)+stepper("is","Itchy & Scratchy","One team score · Dylan + Brent",s.is,!canEdit);
   else inputs=Object.keys(tournament.players).map(name=>{
-    let detail=tournament.teams[tournament.players[name].team].name;
-    if(fmt.key==="singles")detail=Number.isFinite(state.dailyHandicaps[name])?`Daily HCP ${state.dailyHandicaps[name]} · ${stablefordPreview(name,hole,s[name])||`SI ${hole.si}`}`:`Daily HCP required · SI ${hole.si}`;
-    return stepper(name,name,detail,s[name]);
+    let detail=tournament.teams[tournament.players[name].team].name,stablefordLine="";
+    if(fmt.key==="singles"){
+      detail=Number.isFinite(state.dailyHandicaps[name])?`Daily HCP ${state.dailyHandicaps[name]} · Hole SI ${hole.si}`:`Daily HCP required · Hole SI ${hole.si}`;
+      stablefordLine=stablefordPreview(name,hole,s[name]);
+    }
+    return stepper(name,name,detail,s[name],!canEdit,stablefordLine);
   }).join("");
   let result="";
   if(fmt.key!=="singles"){const w=teamHoleWinner(hole.n);result=w?`<div class="result-box"><strong>${w==="bj"?"BERKELEY JAIL WINS HOLE":w==="is"?"ITCHY & SCRATCHY WIN HOLE":"HOLE HALVED"}</strong><span>${fmt.name} · Hole ${hole.n}</span></div>`:"";}
   else if(allDailyHandicapsSet()){const a=singlesHoleWinner(hole.n,["Ben","Dylan"]),b=singlesHoleWinner(hole.n,["Joel","Brent"]);if(a||b)result=`<div class="result-box"><strong>${a?(a==="halved"?"BEN / DYLAN HALVED":`${a.toUpperCase()} WINS`):"BEN / DYLAN PENDING"} · ${b?(b==="halved"?"JOEL / BRENT HALVED":`${b.toUpperCase()} WINS`):"JOEL / BRENT PENDING"}</strong><span>Higher Stableford points win the hole</span></div>`;}
   const teeNote=fmt.key==="foursomes"?`<div class="tee-order"><b>TEE ORDER:</b> ${foursomesTeePlayers(hole.n)}${hole.n===4?" · Ben & Dylan also hit NTP-only shots":""}</div>`:"";
-  const hcpWarning=fmt.key==="singles"&&!allDailyHandicapsSet()?`<div class="notice warning">Set all four official Daily Handicaps in Tournament HQ before Singles scoring.</div>`:"";
-  return `<div class="page-heading"><div class="eyebrow">Scorer mode · PIN protected</div><h1>Enter scores</h1><p>Gross scores go in. Match status, Cup points and Stableford are calculated automatically.</p></div>
-    <section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>‹</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${hole.par} · ${hole.m} m · SI ${hole.si}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>›</button></div>
-      <div class="format-banner"><strong>${fmt.name}</strong><span>${fmt.note}</span></div>${teeNote}${hcpWarning}<div>${inputs}</div>${result}${specialCompetitionPanel(hole)}
-      <button class="course-link-button" id="scoreHoleGuide">⛳ VIEW HOLE ${hole.n} GUIDE</button>
-      <button class="primary-button" id="saveScore">SAVE HOLE ${hole.n} LIVE</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>
+  const hcpWarning=fmt.key==="singles"&&!allDailyHandicapsSet()?`<div class="notice warning">Official Daily Handicaps are still TBC. Singles Stableford will calculate automatically once they are entered.</div>`:"";
+  const modeBanner=canEdit
+    ? `<div class="score-mode-banner scorer"><strong>✎ SCORER MODE</strong><span>Scores can be entered and changed on this phone.</span></div>`
+    : `<div class="score-mode-banner spectator"><strong>👀 READ-ONLY SCORE VIEW</strong><span>Live scores are visible. Scoring controls are locked.</span></div>`;
+  const actions=canEdit
+    ? `<button class="primary-button" id="saveScore">SAVE HOLE ${hole.n} LIVE</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
+    : `<button class="primary-button unlock-scorer-button" id="unlockScorer">🔒 UNLOCK SCORER MODE</button><div class="read-only-help">Only someone with the scorer PIN can save, edit or clear scores.</div>`;
+  return `<div class="page-heading"><div class="eyebrow">${canEdit?"Scorer mode · unlocked":"Live scores · read only"}</div><h1>${canEdit?"Enter scores":"Scores"}</h1><p>${canEdit?"Gross scores go in. Match status, Cup points and Stableford are calculated automatically.":"Follow the live scoring hole-by-hole. Unlock scorer mode only when you need to enter or correct a score."}</p></div>
+    ${modeBanner}<section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>‹</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${hole.par} · ${hole.m} m · SI ${hole.si}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>›</button></div>
+      <div class="format-banner"><strong>${fmt.name}</strong><span>${fmt.note}</span></div>${teeNote}${hcpWarning}<div>${inputs}</div>${result}${specialCompetitionPanel(hole,!canEdit)}
+      <button class="course-link-button" id="scoreHoleGuide">⛳ VIEW HOLE ${hole.n} GUIDE</button>${actions}
     </section>`;
 }
-
 function guideFor(hole){
   return state.courseGuide[hole] || DATA.fallbackGuide[String(hole)] || {};
 }
@@ -481,6 +521,24 @@ function playerNotesForHole(hole){
         ${mine?`<textarea class="note-editor" id="holeNote-${id}" maxlength="1500" placeholder="Add your note for Hole ${hole}…">${escapeHTML(text)}</textarea><button class="secondary-button compact save-hole-note" data-note-player="${id}" data-note-hole="${hole}">SAVE MY NOTE</button>`:`<p>${text?nl2br(text):'<span class="empty-note">No note added yet.</span>'}</p>`}</div>`;
     }).join("")}</div></section>`;
 }
+function hole14DrawGuidePanel(){
+  const order=state.sideGames.driveOrder;
+  return `<section class="card guide-section hole14-draw-card"><div class="guide-label">🎲 OFFICIAL TEE ORDER DRAW</div><p>Randomise all four players before teeing off. The first name below hits first, followed by 2–4.</p><div class="draw-order">${order.length?order.map((p,i)=>`<b class="${i===0?"first-draw":""}">${i+1}. ${escapeHTML(displayNameForKey(p))}${i===0?" · TEES OFF FIRST":""}</b>`).join(""):"No order drawn yet."}</div><button class="secondary-button compact" id="guideDrawOrder">${order.length?"🎲 REDRAW TEE ORDER":"🎲 DRAW TEE ORDER 1–4"}</button><small class="draw-help">Scorer PIN is required to set or redraw the official order.</small></section>`;
+}
+
+async function drawHole14Order(){
+  if(state.sideGames.driveOrder.length&&!window.confirm("Redraw the official Hole 14 tee order?"))return;
+  const order=shuffle(["Ben","Joel","Dylan","Brent"]);
+  const winner=state.sideGames.longestWinner||"";
+  const winnerId=winner&&winner!=="No winner"?playerIdFromName(winner):"";
+  const result=await rpcScorerWrite("writer_cup_save_side_competition",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_competition_type:"longest_drive",p_winner_player_id:winnerId,p_result_text:winner==="No winner"?"Nobody hit the fairway":"Tee order drawn",p_hitting_order:order});
+  if(!result.ok)return;
+  state.sideGames.driveOrder=order;
+  saveLocalState();
+  toast(`${displayNameForKey(order[0])} tees off first`);
+  render();
+}
+
 function holeView(){
   const h=tournament.holes[selectedCourseHole-1],g=guideFor(h.n),fmt=fmtForHole(h.n);
   const special=h.n===4?"🎯 WRITER CUP NTP":h.n===14?"🚀 WRITER CUP LONGEST DRIVE":"";
@@ -491,6 +549,7 @@ function holeView(){
     <section class="card guide-section writer-plan"><div class="guide-label">🏆 WRITER CUP PLAN</div><p>${escapeHTML(g.writer_cup_plan||"Play the match in front of you.")}</p></section>
     <section class="card guide-section danger-guide"><div class="guide-label">⚠️ DANGER</div><p>${escapeHTML(g.danger_note||"Respect the wind and keep the ball in play.")}</p></section>
     <section class="card guide-section local-guide"><div class="guide-label">📍 LOCAL RULE REMINDER</div><p>${escapeHTML(g.local_rule_note||"Check the official Local Rules and course markings before play.")}</p></section>
+    ${h.n===14?hole14DrawGuidePanel():""}
     ${playerNotesForHole(h.n)}
     <a class="secondary-button link-button" href="https://www.coastgolf.com.au/cms/course-tour/hole-${h.n}/" target="_blank" rel="noopener">OFFICIAL COAST HOLE PAGE ↗</a>
     <button class="primary-button" id="scoreThisHole">SCORE HOLE ${h.n}</button>`;
@@ -507,24 +566,40 @@ function individualStats(name){
   return{birdies,pars,bogeys,doublesPlus,played,stablefordWins};
 }
 function playersView(){
-  return `<div class="page-heading"><div class="eyebrow">The field</div><h1>Player Profiles</h1><p>Every profile, biography and shared note is visible to everyone using the Writer Cup app.</p></div>
+  return `<div class="page-heading"><div class="eyebrow">The field</div><h1>Player Profiles</h1><p>Every profile, biography and shared note is visible to everyone. Note editing is limited to the player selected on that phone.</p></div>
     <div class="player-profile-grid">${Object.keys(tournament.players).map(name=>playerCard(profileFor(tournament.players[name].id))).join("")}</div>`;
 }
 function generalNoteBlock(p){
-  const mine=devicePlayerId()===p.id,text=noteFor(p.id,null);
-  if(mine)return `<section class="card profile-section"><div class="profile-section-title"><strong>📝 General Note</strong><span>Shared with everyone</span></div><textarea class="note-editor" id="generalNote-${p.id}" maxlength="1500" placeholder="Add a general golf note…">${escapeHTML(text)}</textarea><button class="secondary-button compact" id="saveGeneralNote">SAVE MY NOTE</button></section>`;
-  return `<section class="card profile-section"><div class="profile-section-title"><strong>📝 General Note</strong><span>Shared</span></div><p>${text?nl2br(text):'<span class="empty-note">No general note added yet.</span>'}</p></section>`;
+  const text=noteFor(p.id,null),mine=devicePlayerId()===p.id;
+  if(!mine)return `<section class="card profile-section"><div class="profile-section-title"><strong>📝 General Note</strong><span>${escapeHTML(p.display_name)} only</span></div><p>${text?nl2br(text):'<span class="empty-note">No general note added yet.</span>'}</p></section>`;
+  return `<section class="card profile-section"><div class="profile-section-title"><strong>📝 My General Note</strong><span>Shared with everyone</span></div><textarea class="note-editor" id="generalNote-${p.id}" maxlength="1500" placeholder="Add your general golf note…">${escapeHTML(text)}</textarea><button class="secondary-button compact" id="saveGeneralNote">SAVE MY GENERAL NOTE</button></section>`;
+}
+function profileHoleNoteComposer(p){
+  const mine=devicePlayerId()===p.id;
+  if(!mine)return "";
+  return `<section class="card profile-section profile-note-composer"><div class="profile-section-title"><strong>✍️ Add / Edit My Hole Note</strong><span>No PIN required</span></div>
+    <label class="field-label">HOLE<select id="profileNoteHole">${tournament.holes.map(h=>`<option value="${h.n}">Hole ${h.n} · Par ${h.par} · ${h.m}m</option>`).join("")}</select></label>
+    <textarea class="note-editor" id="profileHoleNoteText" maxlength="1500" placeholder="Choose a hole, then add your note…"></textarea>
+    <button class="secondary-button compact" id="saveProfileHoleNote">SAVE MY HOLE NOTE</button></section>`;
+}
+function loadProfileHoleNoteEditor(){
+  const select=document.getElementById("profileNoteHole"),textarea=document.getElementById("profileHoleNoteText");
+  if(!select||!textarea)return;
+  textarea.value=noteFor(selectedPlayerId,Number(select.value));
 }
 function playerView(){
-  const p=profileFor(selectedPlayerId),name=p.display_name,hcp=state.dailyHandicaps[name],stats=individualStats(name),my=devicePlayerId()===p.id;
+  const p=profileFor(selectedPlayerId),key=playerNameFromId(p.id),name=p.display_name,hcp=state.dailyHandicaps[key],stats=individualStats(key),mine=devicePlayerId()===p.id;
   const holeNotes=tournament.holes.map(h=>({h:h.n,text:noteFor(p.id,h.n)})).filter(x=>x.text);
+  const ownership=!devicePlayerId()
+    ? `<div class="notice profile-note-access">To write your own notes, choose your player under <b>More → This phone belongs to</b>. Everyone can still read all notes.</div>`
+    : !mine?`<div class="notice profile-note-access">These are ${escapeHTML(name)}'s notes. Only ${escapeHTML(name)} can edit them from their selected phone.</div>`:"";
   return `<div class="profile-hero card">${playerAvatar(p,true)}<div class="profile-hero-copy"><div class="eyebrow">${escapeHTML(formatTeamNameById(p.team_id))}</div><h1>${escapeHTML(name)}</h1><p>${escapeHTML(p.profile_title||"Writer Cup player")}</p><span>Daily HCP: ${Number.isFinite(hcp)?hcp:"TBC"}</span></div></div>
     <div class="profile-actions"><button class="secondary-button" data-route="players">← ALL PLAYERS</button><button class="secondary-button" id="editProfile">EDIT PROFILE</button></div>
     <section class="card profile-section"><div class="profile-section-title"><strong>Biography</strong><span>Public profile</span></div><p>${p.bio?nl2br(p.bio):'<span class="empty-note">Biography not added yet. Use Edit Profile to create one.</span>'}</p></section>
     <div class="profile-stats"><div><small>INDIVIDUAL HOLES</small><strong>${stats.played}</strong></div><div><small>BIRDIES+</small><strong>${stats.birdies}</strong></div><div><small>PARS</small><strong>${stats.pars}</strong></div><div><small>SINGLES WINS</small><strong>${stats.stablefordWins}</strong></div></div>
-    ${generalNoteBlock(p)}
-    <section class="card profile-section"><div class="profile-section-title"><strong>⛳ Hole Notes</strong><span>${holeNotes.length} added</span></div>
-      ${holeNotes.length?`<div class="profile-hole-notes">${holeNotes.map(x=>`<button class="profile-hole-note" data-hole="${x.h}"><b>Hole ${x.h}</b><span>${escapeHTML(x.text)}</span></button>`).join("")}</div>`:`<p><span class="empty-note">${my?"You haven't added any hole notes yet. Open the Course Guide to start.":`${escapeHTML(name)} hasn't added any hole notes yet.`}</span></p>`}
+    ${ownership}${generalNoteBlock(p)}${profileHoleNoteComposer(p)}
+    <section class="card profile-section"><div class="profile-section-title"><strong>⛳ Saved Hole Notes</strong><span>${holeNotes.length} added</span></div>
+      ${holeNotes.length?`<div class="profile-hole-notes">${holeNotes.map(x=>`<button class="profile-hole-note" data-hole="${x.h}"><b>Hole ${x.h}</b><span>${escapeHTML(x.text)}</span></button>`).join("")}</div>`:`<p><span class="empty-note">${mine?"You haven't added any hole notes yet.":`${escapeHTML(name)} hasn't added any hole notes yet.`}</span></p>`}
     </section>`;
 }
 function profileEditView(){
@@ -555,7 +630,7 @@ function devicePlayerPanel(){
 function moreView(){
   return `<div class="page-heading"><div class="eyebrow">Writer Cup HQ · ${connectionLabel()}</div><h1>Tournament HQ</h1><p>Profiles, scorecard, rules and tournament settings.</p></div>
     ${devicePlayerPanel()}${handicapsPanel()}
-    <div class="section-title"><h2>Honours</h2><span>2026 side competitions</span></div><div class="sidegame-grid"><section class="card sidegame"><strong>🎯 Hole 4 · Nearest to the Pin</strong><div class="winner">${escapeHTML(state.sideGames.ntpWinner||"Not decided")}</div><small>${escapeHTML(state.sideGames.ntpDistance||"Ball must finish on the green")}</small></section><section class="card sidegame"><strong>🚀 Hole 14 · Longest Drive</strong><div class="winner">${escapeHTML(state.sideGames.longestWinner||"Not decided")}</div><small>${state.sideGames.driveOrder.length?`Order: ${state.sideGames.driveOrder.join(" · ")}`:"Ball must finish on the fairway"}</small></section></div>
+    <div class="section-title"><h2>Honours</h2><span>2026 side competitions</span></div><div class="sidegame-grid"><section class="card sidegame"><strong>🎯 Hole 4 · Nearest to the Pin</strong><div class="winner">${escapeHTML(state.sideGames.ntpWinner||"Not decided")}</div><small>${escapeHTML(state.sideGames.ntpDistance||"Ball must finish on the green")}</small></section><section class="card sidegame"><strong>🚀 Hole 14 · Longest Drive</strong><div class="winner">${escapeHTML(state.sideGames.longestWinner||"Not decided")}</div><small>${state.sideGames.driveOrder.length?`Order: ${state.sideGames.driveOrder.map(displayNameForKey).join(" · ")}`:"Ball must finish on the fairway"}</small></section></div>
     <div class="section-title"><h2>Tournament</h2><span>Writer Cup 2026</span></div><section class="card menu-list">
       <button data-action="players"><span><strong>🏌️ Player Profiles</strong><small>Photos, bios, stats and notes</small></span><span>›</span></button>
       <button data-action="card"><span><strong>▦ Full Scorecard</strong><small>All 18 holes and indexes</small></span><span>›</span></button>
@@ -585,7 +660,7 @@ function render(){
   bindViewEvents();
 }
 function navigate(r){
-  if(r==="score"&&!scorerPin()){const pin=requireScorerPin();if(!pin)return;}
+  if(r==="score"&&!scorerPin()&&!scoreBrowseHole)scoreBrowseHole=state.currentHole;
   route=r;render();window.scrollTo({top:0,behavior:"smooth"});
 }
 function openPlayer(id){selectedPlayerId=id;localStorage.setItem("writerCupSelectedProfile",id);route="player";render();window.scrollTo({top:0,behavior:"smooth"});}
@@ -604,13 +679,26 @@ async function saveScore(){
   if(h===4){
     const winner=document.getElementById("ntpWinnerSelect")?.value||state.sideGames.ntpWinner,distance=document.getElementById("ntpDistanceInput")?.value.trim()||state.sideGames.ntpDistance;
     state.sideGames.ntpWinner=winner;state.sideGames.ntpDistance=distance;saveLocalState();
-    await rpcScorerWrite("writer_cup_save_side_competition",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_competition_type:"ntp",p_winner_player_id:winner==="No winner"?"":playerIdFromName(winner),p_result_text:winner==="No winner"?"No qualifying ball":distance,p_hitting_order:[]});
+    await rpcScorerWrite("writer_cup_save_side_competition",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_competition_type:"ntp",p_winner_player_id:winner==="No winner"?null:playerIdFromName(winner),p_result_text:winner==="No winner"?"No qualifying ball":distance,p_hitting_order:[]});
   }
   if(h===14){
     const winner=document.getElementById("longestWinnerSelect")?.value||state.sideGames.longestWinner;state.sideGames.longestWinner=winner;saveLocalState();
-    await rpcScorerWrite("writer_cup_save_side_competition",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_competition_type:"longest_drive",p_winner_player_id:winner==="No winner"?"":playerIdFromName(winner),p_result_text:winner==="No winner"?"Nobody hit the fairway":"",p_hitting_order:state.sideGames.driveOrder});
+    await rpcScorerWrite("writer_cup_save_side_competition",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_competition_type:"longest_drive",p_winner_player_id:winner==="No winner"?null:playerIdFromName(winner),p_result_text:winner==="No winner"?"Nobody hit the fairway":"",p_hitting_order:state.sideGames.driveOrder});
   }
   state.currentHole=Math.min(18,h+1);saveLocalState();toast(`Hole ${h} saved live`);render();
+}
+async function clearHoleScores(){
+  const h=state.currentHole;
+  if(!Object.keys(getHoleScore(h)).length)return toast(`Hole ${h} has no saved scores`);
+  if(!window.confirm(`Clear all saved golf scores for Hole ${h}?\n\nThis removes the hole from the live match and Cup calculation. NTP / Longest Drive results will stay untouched.`))return;
+  const result=await rpcScorerWrite("writer_cup_clear_hole",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_hole_number:h});
+  if(!result.ok)return;
+  delete state.scores[h];
+  state.currentHole=h;
+  saveLocalState();
+  await syncFromSupabase({quiet:true});
+  toast(`Hole ${h} scores cleared`);
+  render();
 }
 async function uploadProfilePhoto(){
   const file=document.getElementById("profilePhotoFile")?.files?.[0];
@@ -630,27 +718,43 @@ async function uploadProfilePhoto(){
 }
 
 function bindViewEvents(){
+  document.querySelectorAll("[data-fullscreen-photo]").forEach(el=>el.onclick=e=>{e.preventDefault();e.stopPropagation();openPhotoModal(el.dataset.fullscreenPhoto,el.dataset.photoName||"Player");});
   document.querySelectorAll("[data-route]").forEach(el=>el.onclick=()=>navigate(el.dataset.route));
   document.querySelectorAll("[data-player]").forEach(el=>el.onclick=()=>openPlayer(el.dataset.player));
   document.querySelectorAll("[data-hole]").forEach(el=>el.onclick=()=>openHole(el.dataset.hole));
 
   if(route==="live"){const r=document.getElementById("manualRefresh");if(r)r.onclick=()=>syncFromSupabase();}
   if(route==="score"){
-    document.getElementById("prevHole").onclick=()=>{state.currentHole=Math.max(1,state.currentHole-1);saveLocalState();render();};
-    document.getElementById("nextHole").onclick=()=>{state.currentHole=Math.min(18,state.currentHole+1);saveLocalState();render();};
-    document.querySelectorAll("[data-step]").forEach(btn=>btn.onclick=()=>{const input=document.getElementById(btn.dataset.step),current=Number(input.value)||tournament.holes[state.currentHole-1].par;input.value=Math.max(1,Math.min(20,current+Number(btn.dataset.delta)));});
-    const draw=document.getElementById("drawOrder");if(draw)draw.onclick=()=>{if(state.sideGames.driveOrder.length&&!confirm("Redraw the Hole 14 hitting order?"))return;state.sideGames.driveOrder=shuffle(["Ben","Joel","Dylan","Brent"]);saveLocalState();render();};
-    document.getElementById("saveScore").onclick=saveScore;
-    document.getElementById("lockScorer").onclick=()=>{clearScorerPin();toast("Scorer mode locked");navigate("home");};
-    document.getElementById("scoreHoleGuide").onclick=()=>openHole(state.currentHole);
+    const canEdit=Boolean(scorerPin());
+    const shownHole=()=>canEdit?state.currentHole:(scoreBrowseHole||state.currentHole);
+    document.getElementById("prevHole").onclick=()=>{if(canEdit){state.currentHole=Math.max(1,state.currentHole-1);saveLocalState();}else scoreBrowseHole=Math.max(1,shownHole()-1);render();};
+    document.getElementById("nextHole").onclick=()=>{if(canEdit){state.currentHole=Math.min(18,state.currentHole+1);saveLocalState();}else scoreBrowseHole=Math.min(18,shownHole()+1);render();};
+    if(canEdit){
+      document.querySelectorAll("[data-step]").forEach(btn=>btn.onclick=()=>{
+        const input=document.getElementById(btn.dataset.step),hole=tournament.holes[state.currentHole-1],current=Number(input.value)||hole.par;
+        input.value=Math.max(1,Math.min(20,current+Number(btn.dataset.delta)));
+        if(hole.n>=13)refreshStablefordUnderScore(btn.dataset.step,hole);
+      });
+      if(state.currentHole>=13){
+        Object.keys(tournament.players).forEach(name=>{const input=document.getElementById(name);if(input)input.oninput=()=>refreshStablefordUnderScore(name,tournament.holes[state.currentHole-1]);});
+      }
+      const draw=document.getElementById("drawOrder");if(draw)draw.onclick=drawHole14Order;
+      const save=document.getElementById("saveScore");if(save)save.onclick=saveScore;
+      const clearScores=document.getElementById("clearHoleScores");if(clearScores)clearScores.onclick=clearHoleScores;
+      const lock=document.getElementById("lockScorer");if(lock)lock.onclick=()=>{scoreBrowseHole=state.currentHole;clearScorerPin();toast("Scorer mode locked · read-only view");render();};
+    }else{
+      const unlock=document.getElementById("unlockScorer");if(unlock)unlock.onclick=()=>{const pin=requireScorerPin();if(!pin)return;state.currentHole=scoreBrowseHole||state.currentHole;scoreBrowseHole=null;saveLocalState();toast("Scorer mode unlocked");render();};
+    }
+    document.getElementById("scoreHoleGuide").onclick=()=>openHole(shownHole());
   }
   if(route==="course"){
     document.querySelectorAll(".hole-tile").forEach(b=>b.onclick=()=>openHole(b.dataset.hole));
   }
   if(route==="hole"){
+    const guideDraw=document.getElementById("guideDrawOrder");if(guideDraw)guideDraw.onclick=drawHole14Order;
     const prev=document.getElementById("previousGuide"),next=document.getElementById("nextGuide");
     if(prev)prev.onclick=()=>openHole(selectedCourseHole-1);if(next)next.onclick=()=>openHole(selectedCourseHole+1);
-    document.getElementById("scoreThisHole").onclick=()=>{state.currentHole=selectedCourseHole;saveLocalState();navigate("score");};
+    document.getElementById("scoreThisHole").onclick=()=>{if(scorerPin()){state.currentHole=selectedCourseHole;saveLocalState();}else scoreBrowseHole=selectedCourseHole;navigate("score");};
     const select=document.getElementById("devicePlayerSelect");if(select)select.onchange=()=>{setDevicePlayerId(select.value);render();};
     document.querySelectorAll(".save-hole-note").forEach(b=>b.onclick=()=>{const id=b.dataset.notePlayer,hole=Number(b.dataset.noteHole),text=document.getElementById(`holeNote-${id}`).value;saveSharedNote(id,hole,text);});
   }
@@ -660,6 +764,8 @@ function bindViewEvents(){
   if(route==="player"){
     document.getElementById("editProfile").onclick=()=>{if(!requireScorerPin())return;route="profileEdit";render();};
     const sg=document.getElementById("saveGeneralNote");if(sg)sg.onclick=()=>saveSharedNote(selectedPlayerId,null,document.getElementById(`generalNote-${selectedPlayerId}`).value);
+    const holeSelect=document.getElementById("profileNoteHole");if(holeSelect){holeSelect.onchange=loadProfileHoleNoteEditor;loadProfileHoleNoteEditor();}
+    const saveHole=document.getElementById("saveProfileHoleNote");if(saveHole)saveHole.onclick=()=>{const hole=Number(document.getElementById("profileNoteHole").value),text=document.getElementById("profileHoleNoteText").value;saveSharedNote(selectedPlayerId,hole,text);};
     document.querySelectorAll(".profile-hole-note").forEach(b=>b.onclick=()=>openHole(b.dataset.hole));
   }
   if(route==="profileEdit"){
@@ -688,6 +794,7 @@ document.querySelectorAll(".nav-item").forEach(el=>el.onclick=()=>navigate(el.da
 document.querySelector(".brand-button").onclick=()=>navigate("home");
 document.getElementById("moreButton").onclick=()=>navigate("more");
 
+window.addEventListener("keydown",e=>{if(e.key==="Escape")closePhotoModal();});
 window.addEventListener("online",()=>{state.connection="connecting";saveLocalState();syncFromSupabase({quiet:true}).then(flushPendingWrites);loadWeather();});
 window.addEventListener("offline",()=>{state.connection="offline";saveLocalState();render();});
 

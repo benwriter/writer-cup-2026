@@ -4,8 +4,8 @@
   "description": "Writer Cup 2026 live scoring and tournament centre.",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#020913",
-  "theme_color": "#06162b",
+  "background_color": "#F7F7F3",
+  "theme_color": "#F7F7F3",
   "icons": [
     {
       "src": "./assets/icon-192.png",

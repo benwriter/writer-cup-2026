@@ -31,21 +31,25 @@ window.WRITER_CUP_DATA = {
       "Ben": {
         "id": "ben",
         "initials": "BW",
+        "full_name": "Ben Writer",
         "team": "bj"
       },
       "Joel": {
         "id": "joel",
-        "initials": "JC",
+        "initials": "JR",
+        "full_name": "Joel Ryan",
         "team": "bj"
       },
       "Dylan": {
         "id": "dylan",
-        "initials": "DW",
+        "initials": "DA",
+        "full_name": "Dylan Allen",
         "team": "is"
       },
       "Brent": {
         "id": "brent",
-        "initials": "BS",
+        "initials": "BR",
+        "full_name": "Brent Rogers",
         "team": "is"
       }
     },
