@@ -1,3 +1,5 @@
+// SIDE_COMP_SAVE_FIX_2026_09_01
+// V6.0 SIDE-COMP SAVE FIX · 2026-09-01
 
 const CONFIG = window.WRITER_CUP_CONFIG;
 const DATA = window.WRITER_CUP_DATA;
@@ -751,19 +753,50 @@ async function saveScore(){
     for(const p of Object.keys(tournament.players))score[p]=valueFrom(p);
     if(Object.values(score).some(v=>!v))return toast("Enter all four gross scores");
   }
+
+  // Capture side-competition fields before the hole save. A successful scorer
+  // write syncs and re-renders the page, so reading these afterwards would lose
+  // the user's NTP / Longest Drive selection.
+  const sideCompetition=h===4?{
+    type:"ntp",
+    winner:document.getElementById("ntpWinnerSelect")?.value??state.sideGames.ntpWinner,
+    resultText:document.getElementById("ntpDistanceInput")?.value.trim()??state.sideGames.ntpDistance,
+    hittingOrder:[]
+  }:h===14?{
+    type:"longest_drive",
+    winner:document.getElementById("longestWinnerSelect")?.value??state.sideGames.longestWinner,
+    resultText:"",
+    hittingOrder:[...state.sideGames.driveOrder]
+  }:null;
+
   state.scores[h]=score;saveLocalState();
   const backendScores=fmt==="scramble"?{bj:score.bj,is:score.is}:Object.fromEntries(Object.entries(score).map(([name,v])=>[playerIdFromName(name),v]));
   const result=await rpcScorerWrite("writer_cup_save_hole",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_hole_number:h,p_scores:backendScores});
   if(!result.ok)return;
-  if(h===4){
-    const winner=document.getElementById("ntpWinnerSelect")?.value||state.sideGames.ntpWinner,distance=document.getElementById("ntpDistanceInput")?.value.trim()||state.sideGames.ntpDistance;
-    state.sideGames.ntpWinner=winner;state.sideGames.ntpDistance=distance;saveLocalState();
-    await rpcScorerWrite("writer_cup_save_side_competition",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_competition_type:"ntp",p_winner_player_id:winner==="No winner"?null:playerIdFromName(winner),p_result_text:winner==="No winner"?"No qualifying ball":distance,p_hitting_order:[]});
+
+  if(sideCompetition){
+    const winner=sideCompetition.winner;
+    const resultText=winner==="No winner"
+      ? (sideCompetition.type==="ntp"?"No qualifying ball":"Nobody hit the fairway")
+      : sideCompetition.resultText;
+    if(sideCompetition.type==="ntp"){
+      state.sideGames.ntpWinner=winner;
+      state.sideGames.ntpDistance=resultText;
+    }else{
+      state.sideGames.longestWinner=winner;
+      state.sideGames.driveOrder=[...sideCompetition.hittingOrder];
+    }
+    saveLocalState();
+    const sideResult=await rpcScorerWrite("writer_cup_save_side_competition",{
+      p_tournament_id:CONFIG.TOURNAMENT_ID,
+      p_competition_type:sideCompetition.type,
+      p_winner_player_id:winner&&winner!=="No winner"?playerIdFromName(winner):null,
+      p_result_text:resultText,
+      p_hitting_order:sideCompetition.hittingOrder
+    });
+    if(!sideResult.ok)return;
   }
-  if(h===14){
-    const winner=document.getElementById("longestWinnerSelect")?.value||state.sideGames.longestWinner;state.sideGames.longestWinner=winner;saveLocalState();
-    await rpcScorerWrite("writer_cup_save_side_competition",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_competition_type:"longest_drive",p_winner_player_id:winner==="No winner"?null:playerIdFromName(winner),p_result_text:winner==="No winner"?"Nobody hit the fairway":"",p_hitting_order:state.sideGames.driveOrder});
-  }
+
   scoreBrowseHole=h;saveLocalState();toast(`Hole ${h} saved live · use > when ready for the next hole`);render();
 }
 async function clearHoleScores(){
