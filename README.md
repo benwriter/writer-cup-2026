@@ -1,58 +1,29 @@
-# Writer Cup 2026 App — V5
+# Writer Cup 2026 App — V6
 
-V5 is the polished tournament-day release of the Writer Cup companion app.
+V6 rebuilds the tournament scoring layer around the updated Writer Cup 2026 format while preserving the live app, profiles, course guide, weather, side competitions, realtime syncing and scorer controls.
 
-## Tournament scoring
-- Live 4-point Writer Cup scoring with Supabase Realtime
-- Holes 1–6: Foursomes / Alternate Shot
-- Holes 7–12: Four-Ball Match Play
-- Holes 13–18: Singles Stableford Match Play
-- Official White Tee distances and stroke indexes for all 18 holes
-- Tournament-day Daily Handicaps automatically feed the Stableford calculations
-- Hole 4 Nearest to the Pin and Hole 14 Longest Drive
-- Clear Saved Scores action for correcting an accidentally saved hole
-- Offline score queue / local backup
+## V6 formats
 
-## Score access
-- Everyone can open the Score tab and browse the live scores in read-only mode
-- Spectators can move through previous/current holes and see Stableford previews and match results
-- Scorer PIN unlocks score editing for that browser session
-- Save, clear, side-competition changes and tournament controls remain PIN protected server-side
+### Holes 1–6 — Writer Cup Scramble
+Both players tee off, with tee shots alternating between teams (for example Joel, Dylan, Ben, Brent). The team selects one tee ball, the player whose tee ball was not selected plays the next shot, then partners alternate until holed. Lower team gross score wins the hole.
 
-## Hole 14 tee-order draw
-- Scorer-controlled random draw of all four positions 1–4
-- First player is clearly highlighted
-- Draw is saved live through Supabase so every device sees the same official order
-- A redraw requires scorer control and confirmation
-- The order appears in both the scoring screen and Hole 14 Course Guide
+### Holes 7–12 — Four-Ball Combined Team Stableford
+All four players play their own ball. Stableford is calculated using official Daily Handicaps. Ben + Joel's points are added together and compared with Dylan + Brent's total for each hole. Higher combined total wins the hole.
 
-## Player profiles
-- Ben Writer
-- Joel Ryan
-- Dylan Allen
-- Brent Rogers
-- Full player photos, biographies and profile titles
-- Once a photo is uploaded it automatically replaces the initials avatar
-- Initials remain the fallback only: BW, JR, DA and BR
-- Profile photos can be tapped to view full-screen
+### Holes 13–18 — Aggregate Singles Stableford
+Ben v Dylan and Joel v Brent remain the Singles pairings. Stableford points accumulate across all six holes. Higher six-hole aggregate wins each Singles match point.
 
-## Player notes
-- Everyone can read all four players' general and hole notes
-- Each phone can choose its player under “This phone belongs to”
-- Only that player's notes are editable on that phone
-- Notes do not require a separate player PIN/login
+## Other V6 changes
+- Home countdown now targets the 7:00am tee time.
+- “White Tees” removed from the Home hero.
+- General Rules include team shirt colours: Itchy & Scratchy dark, Berkeley Jail light.
+- Official Rules include a Coast Local Rules summary and direct link.
+- Rules direct uncertain rulings to the Competition Director.
+- New Sponsors & Partners page under More.
+- Hole 4 NTP wording updated for the Writer Cup Scramble.
+- Hole 14 Longest Drive remains in Aggregate Singles with the random 1–4 hitting-order draw.
+- Daily Handicap controls now drive Stableford scoring on Holes 7–18, with each player’s shots received shown directly in the scoring row.
+- Live Match shows running aggregate Singles totals.
 
-## Course and tournament hub
-- 18-hole Course Guide with strategy, danger notes and local-rule reminders
-- Live weather framework for tournament week
-- Full scorecard
-- Official Writer Cup rules
-- White / navy / gold / green Writer Cup visual theme
-- Green Live icon and enlarged gold Score pencil in the bottom navigation
-
-## Deployment
-This is a static PWA. Upload the contents to the GitHub repository root, then deploy through Vercel. The `supabase` folder is source/backup material and is not required by the browser at runtime.
-
-
-## V5.1
-Singles holes 13–18 now display shots received and Stableford points beneath each gross score. The + / − controls are larger for mobile scoring. Singles winner logic remains hole-by-hole Stableford match play.
+## Realtime and data
+Scores are stored in Supabase and broadcast with Supabase Realtime. Spectators remain read-only unless scorer mode is unlocked. Existing profile, photo, course-guide and note data are preserved.

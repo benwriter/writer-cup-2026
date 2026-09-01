@@ -1,126 +1,73 @@
-# WRITER CUP 2026
+# Writer Cup 2026 — Official Match Rules
 
-## OFFICIAL MATCH RULES
+**Venue:** The Coast Golf Club  
+**Date:** 24 September 2026  
+**Tee time:** 7:00am  
+**Teams:** Berkeley Jail (Ben & Joel) vs Itchy & Scratchy (Dylan & Brent)  
+**Total Writer Cup points:** 4
 
-The **2026 Writer Cup** will be contested as a miniature Ryder Cup-style team event between:
+## Holes 1–6 — Writer Cup Scramble — 1 point
 
-**BERKELEY JAIL**  
-Ben & Joel
+Both players from each team tee off. Tee shots should alternate between the teams rather than one team hitting twice in a row, for example **Joel, Dylan, Ben, Brent**. The team chooses which tee ball to continue with. The player whose tee ball is **not selected** plays the next shot. From that point the partners alternate shots until the ball is holed.
 
-**ITCHY & SCRATCHY**  
-Dylan & Brent
-
-The match will be played over **18 holes at The Coast Golf Club**, with all players competing from the **WHITE TEES**.
-
-Three different formats will be played across the round, with a total of **4 Writer Cup points** available.
-
----
-
-## HOLES 1–6 — FOURSOMES / ALTERNATE SHOT
-
-### 1 Point Available
-
-Each team plays **one ball**, with partners alternating shots until the hole is completed.
-
-- **Odd holes:** Ben & Dylan tee off for their respective teams.
-- **Even holes:** Joel & Brent tee off for their respective teams.
-- Following the tee shot, partners continue to alternate strokes until holed.
-- Lower team score wins the hole.
-- Equal scores = **Hole Halved**.
-- Most holes won across 1–6 earns **1 Writer Cup point**.
-- If tied after six, each team receives **½ point**.
+The lower team gross score wins the hole. Equal scores halve the hole. The team winning the most holes across Holes 1–6 wins the Writer Cup point. A tied six-hole match gives ½ point to each team.
 
 ### Hole 4 — Nearest to the Pin
+All four players tee off as part of the normal Writer Cup Scramble. All four tee shots are eligible for NTP. The ball must finish on the putting green.
 
-All four players hit a tee shot.
+## Holes 7–12 — Four-Ball Combined Team Stableford — 1 point
 
-As Hole 4 is even, Joel and Brent remain the designated Foursomes tee players. Only their shots may continue in the Foursomes match. Ben and Dylan's tee shots are NTP-only and are disregarded immediately afterwards.
+All four players play their own ball. Stableford is calculated for each player using the player's official Daily Handicap and the White Tee stroke index for the hole.
 
-The ball must finish on the putting green to qualify.
+- Berkeley Jail hole total = Ben Stableford points + Joel Stableford points.
+- Itchy & Scratchy hole total = Dylan Stableford points + Brent Stableford points.
+- The higher **combined team Stableford total** wins the hole.
+- Equal combined totals halve the hole.
+- The team winning the most holes across Holes 7–12 wins the Writer Cup point.
+- A tied six-hole match gives ½ point to each team.
 
----
+## Holes 13–18 — Aggregate Singles Stableford — 2 points
 
-## HOLES 7–12 — FOUR-BALL MATCH PLAY
+Pairings remain:
+- Ben vs Dylan — 1 Writer Cup point.
+- Joel vs Brent — 1 Writer Cup point.
 
-### 1 Point Available
+Each player plays their own ball. Stableford is calculated using the player's official Daily Handicap and the White Tee stroke index.
 
-All four players play their own ball. Only the **lowest individual score from each team** counts on each hole.
+Stableford points **accumulate across all six holes**. There are no individual hole wins in this section.
 
-- Lower team score wins the hole.
-- Equal low scores = **Hole Halved**.
-- Most holes won across 7–12 earns **1 Writer Cup point**.
-- If tied after six, each team receives **½ point**.
-
----
-
-## HOLES 13–18 — SINGLES STABLEFORD MATCH PLAY
-
-### 2 Points Available
-
-Two simultaneous Singles matches:
-
-- **Ben vs Dylan**
-- **Joel vs Brent**
-
-Each player uses their official **Daily Handicap applicable to The Coast Golf Club White Tees on the day of competition**.
-
-Stableford is calculated on each individual hole using the White Tee stroke index.
-
-- Higher Stableford score wins the hole.
-- Equal Stableford points = **Hole Halved**.
-- Stableford points do **not** accumulate across the six holes.
-- Each Singles match is worth **1 Writer Cup point**.
-- A tied Singles match gives **½ point to each team**.
+After Hole 18:
+- Higher six-hole Stableford aggregate wins the Singles match and 1 Writer Cup point.
+- Equal aggregate totals halve the match for ½ point each.
 
 ### Hole 14 — Longest Drive
+The official 1–4 hitting order is randomly drawn before teeing off. Normal Singles tee shots remain live. The ball must finish on the fairway to qualify. If nobody finds the fairway, nobody wins.
 
-All four names are placed in a random draw to determine hitting order 1–4.
+## The Cup
+- 4 total Writer Cup points are available.
+- 2½ points wins the Writer Cup outright.
+- Berkeley Jail are the defending champions and retain the Cup with 2 points.
+- Itchy & Scratchy require at least 2½ points to take the Cup.
+- A 2–2 result is an official draw and Berkeley Jail retain.
+- No countback.
+- No playoff.
 
-Each player plays their normal Singles tee shot in the drawn order. To qualify, the ball must finish on the **Hole 14 fairway**. If nobody finds the fairway, nobody wins.
-
-**Length is irrelevant if you can't keep it on the short stuff.**
-
----
-
-## WRITER CUP SCORING
-
-There are **4 points available**:
-
-- Foursomes 1–6: **1**
-- Four-Ball 7–12: **1**
-- Ben v Dylan Singles: **1**
-- Joel v Brent Singles: **1**
-
-Any tied match awards **½ point each**.
-
-### Winning the Writer Cup
-
-- **2½ points or more:** outright Writer Cup victory.
-- Defending champions **Berkeley Jail** require **2 points to retain** and **2½ to win outright**.
-- **Itchy & Scratchy** need at least **2½ points** to take possession.
-- A **2–2** final is an official draw and **Berkeley Jail retain the Cup**.
-- **No countback. No playoff.**
-
----
-
-## GENERAL MATCH RULES
-
-- White Tees for all 18 holes, including NTP and Longest Drive.
-- Formats are decided hole by hole.
-- A match may finish early once a side leads by more holes than remain.
+## General Rules
+- White Tees are used throughout.
+- Itchy & Scratchy wear **dark shirts**.
+- Berkeley Jail wear **light shirts**.
 - No gimmies. Required putts must be holed.
-- Normal **R&A Rules of Golf** and applicable **The Coast Golf Club Local Rules** apply unless specifically modified by Writer Cup rules.
-- Scores and current match status should be confirmed before leaving each green.
-- Rules disputes should be settled before play continues where reasonably possible.
-- Good sportsmanship is expected.
+- R&A Rules of Golf and The Coast Golf Club Local Rules apply unless specifically modified by the Writer Cup rules.
+- Current Coast course conditions and temporary Local Rules should be checked on tournament day.
+- If you are unsure of a rule, refer to the **Competition Director** before continuing wherever practical.
 - Banter is encouraged.
-- Complaints regarding coastal wind should be directed to Brent.
-- Any missing cutlery is strictly a matter for the Committee.
+- Coastal-wind complaints go to Brent.
+- Missing cutlery remains a Committee matter.
 
----
+## The Coast Golf Club Local Rules
 
-# WRITER CUP 2026
-**24 SEPTEMBER 2026**  
-**THE COAST GOLF CLUB**
+Official page: https://www.coastgolf.com.au/cms/play/local-rules-course-conditions/
 
-### BIGGER. BETTER. BRUTAL. 🏆
+The Coast publishes current course conditions, out-of-bounds definitions, penalty-area markings, relief procedures, drop zones and temporary Local Rules. Course-specific provisions currently include drop-zone rules on Holes 7, 16 and 18 and the 12th-hole ventilation-pipe replay rule. The official page and course notices on the day take precedence over this summary.
+
+**BIGGER. BETTER. BRUTAL. 🏆**

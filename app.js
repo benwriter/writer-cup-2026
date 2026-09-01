@@ -65,12 +65,20 @@ function requireScorerPin() {
 }
 
 function fmtForHole(hole) {
-  if (hole <= 6) return { key:"foursomes", name:"Foursomes · Alternate Shot", short:"Foursomes", note:"1 Writer Cup point" };
-  if (hole <= 12) return { key:"fourball", name:"Four-Ball Match Play", short:"Four-Ball", note:"1 Writer Cup point" };
-  return { key:"singles", name:"Singles Stableford Match Play", short:"Singles", note:"2 Writer Cup points" };
+  if (hole <= 6) return { key:"scramble", name:"Writer Cup Scramble", short:"Scramble", note:"1 Writer Cup point" };
+  if (hole <= 12) return { key:"fourball_stableford", name:"Four-Ball · Combined Stableford", short:"Team Stableford", note:"1 Writer Cup point" };
+  return { key:"singles_aggregate", name:"Singles · Aggregate Stableford", short:"Aggregate Singles", note:"2 Writer Cup points" };
 }
 function getHoleScore(hole) { return state.scores[hole] || {}; }
-function foursomesTeePlayers(hole) { return hole % 2 ? "Ben & Dylan tee off" : "Joel & Brent tee off"; }
+function displayedScoreHole() {
+  return Math.max(1, Math.min(18, Number(scoreBrowseHole || state.currentHole || 1)));
+}
+function scrambleTeeNote(hole) {
+  const base = hole===4
+    ? "Both players tee off · all four tee shots are eligible for NTP"
+    : "Both players tee off · choose one team ball";
+  return `${base} · teeing order alternates between teams (for example Joel, Dylan, Ben, Brent)`;
+}
 function playerNameFromId(id) { return Object.keys(tournament.players).find(n => tournament.players[n].id === id) || ""; }
 function playerIdFromName(name) { return tournament.players[name]?.id || ""; }
 function displayNameForKey(name) {
@@ -110,72 +118,96 @@ function stablefordPoints(gross, par, dailyHcp, strokeIndex) {
 }
 function allDailyHandicapsSet() { return Object.values(state.dailyHandicaps).every(Number.isFinite); }
 
+function teamStablefordTotals(hole) {
+  const h=tournament.holes[hole-1],s=getHoleScore(hole);
+  if(!h||!allDailyHandicapsSet())return null;
+  const names=["Ben","Joel","Dylan","Brent"];
+  if(names.some(name=>!Number.isFinite(s[name])))return null;
+  const pts=Object.fromEntries(names.map(name=>[name,stablefordPoints(s[name],h.par,state.dailyHandicaps[name],h.si)]));
+  if(Object.values(pts).some(v=>!Number.isFinite(v)))return null;
+  return {bj:pts.Ben+pts.Joel,is:pts.Dylan+pts.Brent,players:pts};
+}
 function teamHoleWinner(hole) {
-  const s = getHoleScore(hole), fmt = fmtForHole(hole).key;
-  if (fmt === "foursomes") {
-    if (!Number.isFinite(s.bj) || !Number.isFinite(s.is)) return null;
-    return s.bj < s.is ? "bj" : s.is < s.bj ? "is" : "halved";
+  const s=getHoleScore(hole),fmt=fmtForHole(hole).key;
+  if(fmt==="scramble"){
+    if(!Number.isFinite(s.bj)||!Number.isFinite(s.is))return null;
+    return s.bj<s.is?"bj":s.is<s.bj?"is":"halved";
   }
-  if (fmt === "fourball") {
-    const bj=[s.Ben,s.Joel].filter(Number.isFinite), is=[s.Dylan,s.Brent].filter(Number.isFinite);
-    if (bj.length < 2 || is.length < 2) return null;
-    const a=Math.min(...bj), b=Math.min(...is);
-    return a < b ? "bj" : b < a ? "is" : "halved";
+  if(fmt==="fourball_stableford"){
+    const totals=teamStablefordTotals(hole);
+    if(!totals)return null;
+    return totals.bj>totals.is?"bj":totals.is>totals.bj?"is":"halved";
   }
   return null;
 }
-function singlesHoleWinner(hole, match) {
-  const h=tournament.holes[hole-1], s=getHoleScore(hole), [a,b]=match;
-  if (!Number.isFinite(s[a]) || !Number.isFinite(s[b])) return null;
-  const ap=stablefordPoints(s[a],h.par,state.dailyHandicaps[a],h.si);
-  const bp=stablefordPoints(s[b],h.par,state.dailyHandicaps[b],h.si);
-  if (!Number.isFinite(ap) || !Number.isFinite(bp)) return null;
-  return ap > bp ? a : bp > ap ? b : "halved";
+function playerStablefordForHole(name,hole) {
+  const h=tournament.holes[hole-1],s=getHoleScore(hole);
+  if(!h||!Number.isFinite(s[name])||!Number.isFinite(state.dailyHandicaps[name]))return null;
+  return stablefordPoints(s[name],h.par,state.dailyHandicaps[name],h.si);
 }
-function normalizeSinglesWinner(result,a,b) {
-  if(result===a)return"bj"; if(result===b)return"is"; return result;
+function singlesAggregateState(match) {
+  const [a,b]=match;
+  let played=0,aTotal=0,bTotal=0;
+  for(let hole=13;hole<=18;hole++){
+    const ap=playerStablefordForHole(a,hole),bp=playerStablefordForHole(b,hole);
+    if(!Number.isFinite(ap)||!Number.isFinite(bp))break;
+    aTotal+=ap;bTotal+=bp;played++;
+  }
+  const complete=played===6;
+  if(!complete)return{finished:false,winner:null,aPoints:0,bPoints:0,played,aTotal,bTotal,status:`${a.toUpperCase()} ${aTotal} · ${b.toUpperCase()} ${bTotal}`};
+  if(aTotal===bTotal)return{finished:true,winner:"halved",aPoints:.5,bPoints:.5,played,aTotal,bTotal,status:`MATCH TIED ${aTotal}–${bTotal}`};
+  const winner=aTotal>bTotal?"bj":"is",winnerName=aTotal>bTotal?a:b;
+  return{finished:true,winner,aPoints:winner==="bj"?1:0,bPoints:winner==="is"?1:0,played,aTotal,bTotal,status:`${winnerName.toUpperCase()} WINS ${Math.max(aTotal,bTotal)}–${Math.min(aTotal,bTotal)}`};
 }
 function resultsFor(section) {
-  if(section==="foursomes") return [1,2,3,4,5,6].map(teamHoleWinner);
-  if(section==="fourball") return [7,8,9,10,11,12].map(teamHoleWinner);
-  if(section==="benDylan") return [13,14,15,16,17,18].map(h=>normalizeSinglesWinner(singlesHoleWinner(h,["Ben","Dylan"]),"Ben","Dylan"));
-  if(section==="joelBrent") return [13,14,15,16,17,18].map(h=>normalizeSinglesWinner(singlesHoleWinner(h,["Joel","Brent"]),"Joel","Brent"));
+  if(section==="scramble")return [1,2,3,4,5,6].map(teamHoleWinner);
+  if(section==="fourball")return [7,8,9,10,11,12].map(teamHoleWinner);
   return [];
 }
 function sectionState(results,labelA="Berkeley Jail",labelB="Itchy & Scratchy") {
-  const played=results.filter(Boolean).length; let a=0,b=0;
-  results.forEach(r=>{if(r==="bj")a++;else if(r==="is")b++;});
-  const remaining=6-played,diff=a-b,clinched=Math.abs(diff)>remaining,complete=played===6;
-  if(clinched||complete){
+  let played=0,a=0,b=0;
+  for(const r of results){
+    // Match status is chronological. If an earlier hole is temporarily blank
+    // (for example while correcting it), later saved holes do not jump ahead.
+    if(!r)break;
+    played++;
+    if(r==="bj")a++;else if(r==="is")b++;
+    const remaining=6-played,diff=a-b;
+    if(Math.abs(diff)>remaining){
+      const winner=a>b?"bj":"is",margin=Math.abs(diff);
+      return{finished:true,winner,aPoints:winner==="bj"?1:0,bPoints:winner==="is"?1:0,status:`${winner==="bj"?labelA:labelB} WINS ${margin}&${remaining}`.toUpperCase(),played,a,b,remaining};
+    }
+  }
+  const remaining=6-played,diff=a-b,complete=played===6;
+  if(complete){
     if(a===b)return{finished:true,winner:"halved",aPoints:.5,bPoints:.5,status:"MATCH HALVED",played,a,b,remaining};
-    const winner=a>b?"bj":"is",margin=Math.abs(diff),resultText=remaining>0?`${margin}&${remaining}`:`${margin} UP`;
-    return{finished:true,winner,aPoints:winner==="bj"?1:0,bPoints:winner==="is"?1:0,status:`${winner==="bj"?labelA:labelB} WINS ${resultText}`.toUpperCase(),played,a,b,remaining};
+    const winner=a>b?"bj":"is",margin=Math.abs(diff);
+    return{finished:true,winner,aPoints:winner==="bj"?1:0,bPoints:winner==="is"?1:0,status:`${winner==="bj"?labelA:labelB} WINS ${margin} UP`.toUpperCase(),played,a,b,remaining};
   }
   if(a===b)return{finished:false,winner:null,aPoints:0,bPoints:0,status:"ALL SQUARE",played,a,b,remaining};
   return{finished:false,winner:null,aPoints:0,bPoints:0,status:`${a>b?labelA:labelB} ${Math.abs(diff)} UP`.toUpperCase(),played,a,b,remaining};
 }
 function cupState() {
-  const foursomes=sectionState(resultsFor("foursomes"));
+  const scramble=sectionState(resultsFor("scramble"));
   const fourball=sectionState(resultsFor("fourball"));
-  const benDylan=sectionState(resultsFor("benDylan"),"Ben","Dylan");
-  const joelBrent=sectionState(resultsFor("joelBrent"),"Joel","Brent");
-  const sections=[foursomes,fourball,benDylan,joelBrent];
-  const bj=sections.reduce((n,s)=>n+s.aPoints,0), is=sections.reduce((n,s)=>n+s.bPoints,0);
+  const benDylan=singlesAggregateState(["Ben","Dylan"]);
+  const joelBrent=singlesAggregateState(["Joel","Brent"]);
+  const sections=[scramble,fourball,benDylan,joelBrent];
+  const bj=sections.reduce((n,s)=>n+s.aPoints,0),is=sections.reduce((n,s)=>n+s.bPoints,0);
   const decided=sections.every(s=>s.finished);
   let outcome="4 points available";
   if(bj>=2.5)outcome="BERKELEY JAIL WIN THE WRITER CUP";
   else if(is>=2.5)outcome="ITCHY & SCRATCHY WIN THE WRITER CUP";
   else if(decided&&bj===2&&is===2)outcome="2–2 DRAW · BERKELEY JAIL RETAIN THE CUP";
   else if(bj>=2)outcome="BERKELEY JAIL HAVE RETAINED THE CUP";
-  return{foursomes,fourball,benDylan,joelBrent,bj,is,decided,outcome};
+  return{scramble,fourball,benDylan,joelBrent,bj,is,decided,outcome};
 }
 function currentLiveStatus() {
   const h=state.currentHole,cup=cupState();
-  if(h<=6)return{title:cup.foursomes.status,subtitle:`Foursomes · ${cup.foursomes.played} holes completed`};
-  if(h<=12)return{title:cup.fourball.status,subtitle:`Four-Ball · ${cup.fourball.played} holes completed`};
-  return{title:"SINGLES LIVE",subtitle:`${cup.benDylan.status} · ${cup.joelBrent.status}`};
+  if(h<=6)return{title:cup.scramble.status,subtitle:`Writer Cup Scramble · ${cup.scramble.played} holes completed`};
+  if(h<=12)return{title:cup.fourball.status,subtitle:`Combined Team Stableford · ${cup.fourball.played} holes completed`};
+  return{title:"AGGREGATE SINGLES LIVE",subtitle:`${cup.benDylan.status} · ${cup.joelBrent.status}`};
 }
-
 function countdownParts() {
   let ms=Math.max(0,new Date(tournament.date)-new Date());
   const days=Math.floor(ms/86400000);ms%=86400000;
@@ -415,8 +447,8 @@ function homeView(){
   const c=countdownParts(),live=currentLiveStatus();
   return `<section class="hero">
       <img class="hero-logo" src="./assets/writer-cup-logo.png" alt="" />
-      <div class="eyebrow">The Coast Golf Club · White Tees</div><h1>Bigger. Better.<br>Brutal.</h1>
-      <p>Thursday 24 September 2026 · Little Bay, NSW</p>
+      <div class="eyebrow">The Coast Golf Club</div><h1>Bigger. Better.<br>Brutal.</h1>
+      <p>Thursday 24 September 2026 · 7:00am tee off · Little Bay, NSW</p>
       <div class="countdown" id="countdown"><div><strong>${c.days}</strong><small>Days</small></div><div><strong>${c.hours}</strong><small>Hours</small></div><div><strong>${c.mins}</strong><small>Mins</small></div><div><strong>${c.secs}</strong><small>Secs</small></div></div>
     </section>
     <div class="section-title"><h2>Tournament conditions</h2><span>Little Bay</span></div>${weatherCard()}
@@ -425,7 +457,7 @@ function homeView(){
     <section class="card match-card"><div class="live-pill">TOURNAMENT CENTRE</div>
       <div class="match-team-row"><div class="team"><strong>Berkeley Jail</strong><span>Ben · Joel · Defending champions</span></div><div class="vs">VS</div><div class="team"><strong>Itchy &amp; Scratchy</strong><span>Dylan · Brent · Challengers</span></div></div>
       <div class="big-status"><strong>${live.title}</strong><span>${live.subtitle}</span></div>
-      <div class="stage-strip"><div class="stage ${state.currentHole<=6?"active":""}"><small>Holes 1–6 · 1 pt</small><strong>Foursomes</strong></div><div class="stage ${state.currentHole>=7&&state.currentHole<=12?"active":""}"><small>Holes 7–12 · 1 pt</small><strong>Four-Ball</strong></div><div class="stage ${state.currentHole>=13?"active":""}"><small>Holes 13–18 · 2 pts</small><strong>Singles</strong></div></div>
+      <div class="stage-strip"><div class="stage ${state.currentHole<=6?"active":""}"><small>Holes 1–6 · 1 pt</small><strong>Scramble</strong></div><div class="stage ${state.currentHole>=7&&state.currentHole<=12?"active":""}"><small>Holes 7–12 · 1 pt</small><strong>Team Stableford</strong></div><div class="stage ${state.currentHole>=13?"active":""}"><small>Holes 13–18 · 2 pts</small><strong>Aggregate Singles</strong></div></div>
     </section>
     <div class="section-title"><h2>Jump in</h2><span>Everything for the day</span></div>
     <div class="quick-grid"><button class="quick-card" data-route="score"><span>✎</span><strong>Scores</strong><small>Live · scorer unlock</small></button><button class="quick-card" data-route="live"><span>●</span><strong>Live match</strong><small>Realtime updates</small></button><button class="quick-card" data-route="course"><span>⛳</span><strong>Course guide</strong><small>18-hole caddie plan</small></button><button class="quick-card" data-route="players"><span>🏌️</span><strong>Players</strong><small>Profiles + notes</small></button></div>
@@ -439,13 +471,14 @@ function playerCard(p){
 function progressBars(results){return results.map(r=>`<i class="${r||""}"></i>`).join("");}
 function liveView(){
   const cup=cupState();
+  const aggregateProgress=s=>Array.from({length:6},(_,i)=>i<s.played?"played":"");
   return `<div class="page-heading"><div class="eyebrow">Match centre · ${connectionLabel()}</div><h1>Live Writer Cup</h1><p>Every completed match feeds the four-point Cup score automatically.</p></div>
     ${cupScoreCard()}
-    <div class="section-title"><h2>Matches</h2><span>Hole-by-hole</span></div>
-    <section class="card segment-card"><div class="segment-head"><strong>Foursomes</strong><span>Holes 1–6 · 1 pt</span></div><div class="segment-status">${cup.foursomes.status}</div><div class="progress">${progressBars(resultsFor("foursomes"))}</div></section>
-    <section class="card segment-card"><div class="segment-head"><strong>Four-Ball</strong><span>Holes 7–12 · 1 pt</span></div><div class="segment-status">${cup.fourball.status}</div><div class="progress">${progressBars(resultsFor("fourball"))}</div></section>
-    <section class="card segment-card"><div class="segment-head"><strong>Ben v Dylan</strong><span>Singles · 1 pt</span></div><div class="segment-status">${cup.benDylan.status}</div><div class="progress">${progressBars(resultsFor("benDylan"))}</div></section>
-    <section class="card segment-card"><div class="segment-head"><strong>Joel v Brent</strong><span>Singles · 1 pt</span></div><div class="segment-status">${cup.joelBrent.status}</div><div class="progress">${progressBars(resultsFor("joelBrent"))}</div></section>
+    <div class="section-title"><h2>Matches</h2><span>Live scoring</span></div>
+    <section class="card segment-card"><div class="segment-head"><strong>Writer Cup Scramble</strong><span>Holes 1–6 · 1 pt</span></div><div class="segment-status">${cup.scramble.status}</div><div class="progress">${progressBars(resultsFor("scramble"))}</div></section>
+    <section class="card segment-card"><div class="segment-head"><strong>Combined Team Stableford</strong><span>Holes 7–12 · 1 pt</span></div><div class="segment-status">${cup.fourball.status}</div><div class="progress">${progressBars(resultsFor("fourball"))}</div></section>
+    <section class="card segment-card aggregate-card"><div class="segment-head"><strong>Ben v Dylan</strong><span>Aggregate Singles · 1 pt</span></div><div class="segment-status">${cup.benDylan.status}</div><div class="aggregate-score"><b>Ben ${cup.benDylan.aTotal}</b><span>${cup.benDylan.played} of 6 holes scored</span><b>Dylan ${cup.benDylan.bTotal}</b></div><div class="progress">${progressBars(aggregateProgress(cup.benDylan))}</div></section>
+    <section class="card segment-card aggregate-card"><div class="segment-head"><strong>Joel v Brent</strong><span>Aggregate Singles · 1 pt</span></div><div class="segment-status">${cup.joelBrent.status}</div><div class="aggregate-score"><b>Joel ${cup.joelBrent.aTotal}</b><span>${cup.joelBrent.played} of 6 holes scored</span><b>Brent ${cup.joelBrent.bTotal}</b></div><div class="progress">${progressBars(aggregateProgress(cup.joelBrent))}</div></section>
     <button class="secondary-button" id="manualRefresh">REFRESH LIVE DATA</button>`;
 }
 function stepper(id,label,detail,value,readOnly=false,stablefordLine=""){
@@ -465,37 +498,47 @@ function refreshStablefordUnderScore(name,hole){
   out.textContent=stablefordPreview(name,hole,gross);
 }
 function specialCompetitionPanel(hole,readOnly=false){
-  if(hole.n===4)return `<div class="special-panel"><strong>🎯 Hole 4 · Nearest to the Pin</strong><span>All four players hit. Joel & Brent remain the live Foursomes tee balls. Ben & Dylan are NTP-only.</span><select id="ntpWinnerSelect" ${readOnly?"disabled":""}><option value="">NTP winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option ${state.sideGames.ntpWinner===p?"selected":""}>${p}</option>`).join("")}<option value="No winner" ${state.sideGames.ntpWinner==="No winner"?"selected":""}>No qualifying ball</option></select><input id="ntpDistanceInput" placeholder="Optional distance, e.g. 2.4 m" value="${escapeHTML(state.sideGames.ntpDistance)}" ${readOnly?"readonly":""}></div>`;
-  if(hole.n===14)return `<div class="special-panel"><strong>🚀 Hole 14 · Longest Drive</strong><span>Normal Singles tee shots. Ball must finish on the fairway. The official 1–4 tee order is drawn at random.</span><div class="draw-order">${state.sideGames.driveOrder.length?state.sideGames.driveOrder.map((p,i)=>`<b class="${i===0?"first-draw":""}">${i+1}. ${escapeHTML(displayNameForKey(p))}${i===0?" · TEES OFF FIRST":""}</b>`).join(""):"Draw not completed"}</div>${readOnly?"":'<button class="secondary-button compact" id="drawOrder">🎲 DRAW TEE ORDER 1–4</button>'}<select id="longestWinnerSelect" ${readOnly?"disabled":""}><option value="">Longest Drive winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option value="${p}" ${state.sideGames.longestWinner===p?"selected":""}>${escapeHTML(displayNameForKey(p))}</option>`).join("")}<option value="No winner" ${state.sideGames.longestWinner==="No winner"?"selected":""}>Nobody hit the fairway</option></select></div>`;
+  if(hole.n===4)return `<div class="special-panel"><strong>🎯 Hole 4 · Nearest to the Pin</strong><span>Writer Cup Scramble: all four players tee off as normal and all four tee shots are eligible for NTP. Ball must finish on the putting green.</span><select id="ntpWinnerSelect" ${readOnly?"disabled":""}><option value="">NTP winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option ${state.sideGames.ntpWinner===p?"selected":""}>${p}</option>`).join("")}<option value="No winner" ${state.sideGames.ntpWinner==="No winner"?"selected":""}>No qualifying ball</option></select><input id="ntpDistanceInput" placeholder="Optional distance, e.g. 2.4 m" value="${escapeHTML(state.sideGames.ntpDistance)}" ${readOnly?"readonly":""}></div>`;
+  if(hole.n===14)return `<div class="special-panel"><strong>🚀 Hole 14 · Longest Drive</strong><span>Normal Aggregate Singles tee shots. Ball must finish on the fairway. The official 1–4 tee order is drawn at random.</span><div class="draw-order">${state.sideGames.driveOrder.length?state.sideGames.driveOrder.map((p,i)=>`<b class="${i===0?"first-draw":""}">${i+1}. ${escapeHTML(displayNameForKey(p))}${i===0?" · TEES OFF FIRST":""}</b>`).join(""):"Draw not completed"}</div>${readOnly?"":'<button class="secondary-button compact" id="drawOrder">🎲 DRAW TEE ORDER 1–4</button>'}<select id="longestWinnerSelect" ${readOnly?"disabled":""}><option value="">Longest Drive winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option value="${p}" ${state.sideGames.longestWinner===p?"selected":""}>${escapeHTML(displayNameForKey(p))}</option>`).join("")}<option value="No winner" ${state.sideGames.longestWinner==="No winner"?"selected":""}>Nobody hit the fairway</option></select></div>`;
   return"";
 }
 function scoreView(){
   const canEdit=Boolean(scorerPin());
-  const holeNumber=canEdit?state.currentHole:(scoreBrowseHole||state.currentHole);
+  const holeNumber=displayedScoreHole();
   const hole=tournament.holes[holeNumber-1],fmt=fmtForHole(hole.n),s=getHoleScore(hole.n);
   const hasSaved=Object.keys(s).length>0;
+  const stablefordFormat=fmt.key==="fourball_stableford"||fmt.key==="singles_aggregate";
   let inputs="";
-  if(fmt.key==="foursomes")inputs=stepper("bj","Berkeley Jail","One team score · Ben + Joel",s.bj,!canEdit)+stepper("is","Itchy & Scratchy","One team score · Dylan + Brent",s.is,!canEdit);
-  else inputs=Object.keys(tournament.players).map(name=>{
-    let detail=tournament.teams[tournament.players[name].team].name,stablefordLine="";
-    if(fmt.key==="singles"){
-      detail=Number.isFinite(state.dailyHandicaps[name])?`Daily HCP ${state.dailyHandicaps[name]} · Hole SI ${hole.si}`:`Daily HCP required · Hole SI ${hole.si}`;
-      stablefordLine=stablefordPreview(name,hole,s[name]);
-    }
-    return stepper(name,name,detail,s[name],!canEdit,stablefordLine);
-  }).join("");
+  if(fmt.key==="scramble"){
+    inputs=stepper("bj","Berkeley Jail","One team gross score · Ben + Joel",s.bj,!canEdit)+stepper("is","Itchy & Scratchy","One team gross score · Dylan + Brent",s.is,!canEdit);
+  }else{
+    inputs=Object.keys(tournament.players).map(name=>{
+      const strokes=Number.isFinite(state.dailyHandicaps[name])?stablefordStrokesReceived(state.dailyHandicaps[name],hole.si):null;
+      const shotText=Number.isFinite(strokes)?`${strokes} Stableford shot${strokes===1?"":"s"}`:"shots pending";
+      const detail=Number.isFinite(state.dailyHandicaps[name])?`Daily HCP ${state.dailyHandicaps[name]} · Hole SI ${hole.si} · ${shotText}`:`Daily HCP required · Hole SI ${hole.si} · shots pending`;
+      return stepper(name,name,detail,s[name],!canEdit,stablefordPreview(name,hole,s[name]));
+    }).join("");
+  }
   let result="";
-  if(fmt.key!=="singles"){const w=teamHoleWinner(hole.n);result=w?`<div class="result-box"><strong>${w==="bj"?"BERKELEY JAIL WINS HOLE":w==="is"?"ITCHY & SCRATCHY WIN HOLE":"HOLE HALVED"}</strong><span>${fmt.name} · Hole ${hole.n}</span></div>`:"";}
-  else if(allDailyHandicapsSet()){const a=singlesHoleWinner(hole.n,["Ben","Dylan"]),b=singlesHoleWinner(hole.n,["Joel","Brent"]);if(a||b)result=`<div class="result-box"><strong>${a?(a==="halved"?"BEN / DYLAN HALVED":`${a.toUpperCase()} WINS`):"BEN / DYLAN PENDING"} · ${b?(b==="halved"?"JOEL / BRENT HALVED":`${b.toUpperCase()} WINS`):"JOEL / BRENT PENDING"}</strong><span>Higher Stableford points win the hole</span></div>`;}
-  const teeNote=fmt.key==="foursomes"?`<div class="tee-order"><b>TEE ORDER:</b> ${foursomesTeePlayers(hole.n)}${hole.n===4?" · Ben & Dylan also hit NTP-only shots":""}</div>`:"";
-  const hcpWarning=fmt.key==="singles"&&!allDailyHandicapsSet()?`<div class="notice warning">Official Daily Handicaps are still TBC. Singles Stableford will calculate automatically once they are entered.</div>`:"";
+  if(fmt.key==="scramble"){
+    const w=teamHoleWinner(hole.n);
+    if(w)result=`<div class="result-box"><strong>${w==="bj"?"BERKELEY JAIL WINS HOLE":w==="is"?"ITCHY & SCRATCHY WIN HOLE":"HOLE HALVED"}</strong><span>Writer Cup Scramble · Hole ${hole.n}</span></div>`;
+  }else if(fmt.key==="fourball_stableford"){
+    const totals=teamStablefordTotals(hole.n),w=teamHoleWinner(hole.n);
+    if(totals&&w)result=`<div class="result-box"><strong>${w==="bj"?"BERKELEY JAIL WINS HOLE":w==="is"?"ITCHY & SCRATCHY WIN HOLE":"HOLE HALVED"}</strong><span>Combined Stableford · BJ ${totals.bj} pts · I&amp;S ${totals.is} pts</span></div>`;
+  }else if(allDailyHandicapsSet()){
+    const a=singlesAggregateState(["Ben","Dylan"]),b=singlesAggregateState(["Joel","Brent"]);
+    result=`<div class="result-box aggregate-result"><strong>RUNNING AGGREGATE</strong><span>Ben ${a.aTotal} · Dylan ${a.bTotal} &nbsp; | &nbsp; Joel ${b.aTotal} · Brent ${b.bTotal}</span><small>Stableford points accumulate across Holes 13–18.</small></div>`;
+  }
+  const teeNote=fmt.key==="scramble"?`<div class="tee-order"><b>WRITER CUP SCRAMBLE:</b> ${scrambleTeeNote(hole.n)}. The player whose tee ball is <b>not</b> chosen hits the next shot, then partners alternate until holed.</div>`:"";
+  const hcpWarning=stablefordFormat&&!allDailyHandicapsSet()?`<div class="notice warning">Official Daily Handicaps are required for Stableford scoring on Holes 7–18. Calculations will update automatically once they are entered.</div>`:"";
   const modeBanner=canEdit
     ? `<div class="score-mode-banner scorer"><strong>✎ SCORER MODE</strong><span>Scores can be entered and changed on this phone.</span></div>`
     : `<div class="score-mode-banner spectator"><strong>👀 READ-ONLY SCORE VIEW</strong><span>Live scores are visible. Scoring controls are locked.</span></div>`;
   const actions=canEdit
-    ? `<button class="primary-button" id="saveScore">SAVE HOLE ${hole.n} LIVE</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
+    ? `<button class="primary-button" id="saveScore">SAVE HOLE ${hole.n} LIVE</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR HOLE ${hole.n} SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
     : `<button class="primary-button unlock-scorer-button" id="unlockScorer">🔒 UNLOCK SCORER MODE</button><div class="read-only-help">Only someone with the scorer PIN can save, edit or clear scores.</div>`;
-  return `<div class="page-heading"><div class="eyebrow">${canEdit?"Scorer mode · unlocked":"Live scores · read only"}</div><h1>${canEdit?"Enter scores":"Scores"}</h1><p>${canEdit?"Gross scores go in. Match status, Cup points and Stableford are calculated automatically.":"Follow the live scoring hole-by-hole. Unlock scorer mode only when you need to enter or correct a score."}</p></div>
+  return `<div class="page-heading"><div class="eyebrow">${canEdit?"Scorer mode · unlocked":"Live scores · read only"}</div><h1>${canEdit?"Enter scores":"Scores"}</h1><p>${canEdit?"Enter gross scores. Stableford, match status and Cup points are calculated automatically.":"Follow the live scoring hole-by-hole. Unlock scorer mode only when you need to enter or correct a score."}</p></div>
     ${modeBanner}<section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>&lt;</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${hole.par} · ${hole.m} m · SI ${hole.si}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>&gt;</button></div>
       <div class="format-banner"><strong>${fmt.name}</strong><span>${fmt.note}</span></div>${teeNote}${hcpWarning}<div>${inputs}</div>${result}${specialCompetitionPanel(hole,!canEdit)}
       <button class="course-link-button" id="scoreHoleGuide">⛳ VIEW HOLE ${hole.n} GUIDE</button>${actions}
@@ -555,15 +598,14 @@ function holeView(){
     <button class="primary-button" id="scoreThisHole">SCORE HOLE ${h.n}</button>`;
 }
 function individualStats(name){
-  let birdies=0,pars=0,bogeys=0,doublesPlus=0,played=0,stablefordWins=0;
+  let birdies=0,pars=0,bogeys=0,doublesPlus=0,played=0,stablefordTotal=0;
   for(let n=7;n<=18;n++){
     const gross=getHoleScore(n)[name];if(!Number.isFinite(gross))continue;
-    played++;const par=tournament.holes[n-1].par,diff=gross-par;
+    played++;const h=tournament.holes[n-1],diff=gross-h.par;
     if(diff<=-1)birdies++;else if(diff===0)pars++;else if(diff===1)bogeys++;else doublesPlus++;
+    const pts=playerStablefordForHole(name,n);if(Number.isFinite(pts))stablefordTotal+=pts;
   }
-  if(name==="Ben"||name==="Dylan"){for(let n=13;n<=18;n++){const w=singlesHoleWinner(n,["Ben","Dylan"]);if(w===name)stablefordWins++;}}
-  else{for(let n=13;n<=18;n++){const w=singlesHoleWinner(n,["Joel","Brent"]);if(w===name)stablefordWins++;}}
-  return{birdies,pars,bogeys,doublesPlus,played,stablefordWins};
+  return{birdies,pars,bogeys,doublesPlus,played,stablefordTotal};
 }
 function playersView(){
   return `<div class="page-heading"><div class="eyebrow">The field</div><h1>Player Profiles</h1><p>Every profile, biography and shared note is visible to everyone. Note editing is limited to the player selected on that phone.</p></div>
@@ -596,7 +638,7 @@ function playerView(){
   return `<div class="profile-hero card">${playerAvatar(p,true)}<div class="profile-hero-copy"><div class="eyebrow">${escapeHTML(formatTeamNameById(p.team_id))}</div><h1>${escapeHTML(name)}</h1><p>${escapeHTML(p.profile_title||"Writer Cup player")}</p><span>Daily HCP: ${Number.isFinite(hcp)?hcp:"TBC"}</span></div></div>
     <div class="profile-actions"><button class="secondary-button" data-route="players">← ALL PLAYERS</button><button class="secondary-button" id="editProfile">EDIT PROFILE</button></div>
     <section class="card profile-section"><div class="profile-section-title"><strong>Biography</strong><span>Public profile</span></div><p>${p.bio?nl2br(p.bio):'<span class="empty-note">Biography not added yet. Use Edit Profile to create one.</span>'}</p></section>
-    <div class="profile-stats"><div><small>INDIVIDUAL HOLES</small><strong>${stats.played}</strong></div><div><small>BIRDIES+</small><strong>${stats.birdies}</strong></div><div><small>PARS</small><strong>${stats.pars}</strong></div><div><small>SINGLES WINS</small><strong>${stats.stablefordWins}</strong></div></div>
+    <div class="profile-stats"><div><small>INDIVIDUAL HOLES</small><strong>${stats.played}</strong></div><div><small>BIRDIES+</small><strong>${stats.birdies}</strong></div><div><small>PARS</small><strong>${stats.pars}</strong></div><div><small>STABLEFORD PTS</small><strong>${stats.stablefordTotal}</strong></div></div>
     ${ownership}${generalNoteBlock(p)}${profileHoleNoteComposer(p)}
     <section class="card profile-section"><div class="profile-section-title"><strong>⛳ Saved Hole Notes</strong><span>${holeNotes.length} added</span></div>
       ${holeNotes.length?`<div class="profile-hole-notes">${holeNotes.map(x=>`<button class="profile-hole-note" data-hole="${x.h}"><b>Hole ${x.h}</b><span>${escapeHTML(x.text)}</span></button>`).join("")}</div>`:`<p><span class="empty-note">${mine?"You haven't added any hole notes yet.":`${escapeHTML(name)} hasn't added any hole notes yet.`}</span></p>`}
@@ -612,21 +654,38 @@ function profileEditView(){
 }
 function scorecardView(){
   const holes=tournament.holes;
+  const sfCell=h=>{
+    if(h.n<=6){
+      const w=teamHoleWinner(h.n);return w==="bj"?"BJ":w==="is"?"I&S":w==="halved"?"½":"–";
+    }
+    if(h.n<=12){
+      const t=teamStablefordTotals(h.n);return t?`BJ ${t.bj} / I&S ${t.is}`:"–";
+    }
+    const vals=["Ben","Dylan","Joel","Brent"].map(n=>playerStablefordForHole(n,h.n));
+    return vals.every(Number.isFinite)?`B${vals[0]} D${vals[1]} · J${vals[2]} Br${vals[3]}`:"–";
+  };
   const rows=[
     {label:"Par",get:h=>h.par,cls:"subtle"},{label:"Metres",get:h=>h.m,cls:"subtle"},{label:"White SI",get:h=>h.si,cls:"subtle"},
     {label:"Ben",get:h=>getHoleScore(h.n).Ben??(h.n<=6?"Team":"–")},{label:"Joel",get:h=>getHoleScore(h.n).Joel??(h.n<=6?"Team":"–")},
     {label:"Dylan",get:h=>getHoleScore(h.n).Dylan??(h.n<=6?"Team":"–")},{label:"Brent",get:h=>getHoleScore(h.n).Brent??(h.n<=6?"Team":"–")},
-    {label:"Result",get:h=>{if(h.n<=12){const w=teamHoleWinner(h.n);return w==="bj"?"BJ":w==="is"?"I&S":w==="halved"?"½":"–";}const a=singlesHoleWinner(h.n,["Ben","Dylan"]),b=singlesHoleWinner(h.n,["Joel","Brent"]);if(!a&&!b)return"–";const f=r=>r==="halved"?"½":(r||"–");return`${f(a)} / ${f(b)}`;}}
+    {label:"SF / Result",get:sfCell}
   ];
-  return `<div class="page-heading"><div class="eyebrow">The Coast · White Tees</div><h1>Scorecard</h1><p>Official White Tee stroke indexes are loaded for all 18 holes.</p></div><div class="scorecard-wrap"><table class="scorecard"><thead><tr><th>Hole</th>${holes.map(h=>`<th>${h.n}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr><td>${r.label}</td>${holes.map(h=>`<td class="${r.cls||""}">${r.get(h)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  return `<div class="page-heading"><div class="eyebrow">The Coast · White Tees</div><h1>Scorecard</h1><p>Gross scores plus Stableford and match results across all three Writer Cup formats.</p></div><div class="scorecard-wrap"><table class="scorecard"><thead><tr><th>Hole</th>${holes.map(h=>`<th>${h.n}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr><td>${r.label}</td>${holes.map(h=>`<td class="${r.cls||""}">${r.get(h)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 function handicapsPanel(){
-  return `<section class="card settings-card"><strong>Singles Daily Handicaps</strong><p>Enter each player's official Daily Handicap for The Coast White Tees on tournament day.</p><div class="hcp-grid">${Object.keys(tournament.players).map(name=>`<label><span>${name}</span><input class="hcp-input" id="hcp-${name}" inputmode="numeric" value="${Number.isFinite(state.dailyHandicaps[name])?state.dailyHandicaps[name]:""}" placeholder="TBC"></label>`).join("")}</div><button class="secondary-button" id="saveHandicaps">SAVE HANDICAPS LIVE</button></section>`;
+  return `<section class="card settings-card"><strong>Stableford Daily Handicaps</strong><p>Enter each player's official Daily Handicap for The Coast White Tees on tournament day. These handicaps drive Stableford scoring on Holes 7–18.</p><div class="hcp-grid">${Object.keys(tournament.players).map(name=>`<label><span>${name}</span><input class="hcp-input" id="hcp-${name}" inputmode="numeric" value="${Number.isFinite(state.dailyHandicaps[name])?state.dailyHandicaps[name]:""}" placeholder="TBC"></label>`).join("")}</div><button class="secondary-button" id="saveHandicaps">SAVE HANDICAPS LIVE</button></section>`;
 }
 function devicePlayerPanel(){
   const me=devicePlayerId();
   return `<section class="card settings-card"><strong>This phone belongs to</strong><p>This is only a convenience setting, not a login. It decides which shared note box is editable on this phone.</p><select class="device-player-select" id="hqDevicePlayer"><option value="">Choose player…</option>${Object.keys(tournament.players).map(name=>{const id=tournament.players[name].id;return`<option value="${id}" ${me===id?"selected":""}>${name}</option>`}).join("")}</select></section>`;
 }
+function sponsorsView(){
+  const sponsors=["TEMU","2 P’s On A Pod Podcast","Shell Petroleum","Guzman y Gomez","Srixon","Titleist","LSKD","Wesley Mission","Tri-Lite Golf Buggies","The Coast Golf & Recreation Club","Hahn Beer"];
+  return `<div class="page-heading"><div class="eyebrow">Writer Cup 2026</div><h1>Sponsors &amp; Partners</h1><p>The organisations helping keep the Writer Cup unnecessarily professional.</p></div>
+    <section class="sponsor-grid">${sponsors.map((name,i)=>`<div class="card sponsor-card"><span>${String(i+1).padStart(2,"0")}</span><strong>${escapeHTML(name)}</strong></div>`).join("")}</section>
+    <button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
+}
+
 function moreView(){
   return `<div class="page-heading"><div class="eyebrow">Writer Cup HQ · ${connectionLabel()}</div><h1>Tournament HQ</h1><p>Profiles, scorecard, rules and tournament settings.</p></div>
     ${devicePlayerPanel()}${handicapsPanel()}
@@ -635,32 +694,39 @@ function moreView(){
       <button data-action="players"><span><strong>🏌️ Player Profiles</strong><small>Photos, bios, stats and notes</small></span><span>›</span></button>
       <button data-action="card"><span><strong>▦ Full Scorecard</strong><small>All 18 holes and indexes</small></span><span>›</span></button>
       <button data-action="rules"><span><strong>📜 Official Match Rules</strong><small>Formats, honours and Cup scoring</small></span><span>›</span></button>
+      <button data-action="sponsors"><span><strong>🤝 Sponsors &amp; Partners</strong><small>Writer Cup 2026 supporters</small></span><span>›</span></button>
       <button data-action="weather"><span><strong>🌬️ Refresh Weather</strong><small>Tournament-week Little Bay forecast</small></span><span>›</span></button>
       <button data-action="refresh"><span><strong>↻ Refresh Live Data</strong><small>Pull latest Supabase data</small></span><span>›</span></button>
       <button data-action="lock"><span><strong>🔒 Lock Scorer Mode</strong><small>Forget scorer PIN on this device</small></span><span>›</span></button>
     </section>`;
 }
 function rulesView(){
-  return `<div class="page-heading"><div class="eyebrow">Official Match Rules</div><h1>Writer Cup 2026</h1><p>18 holes · White Tees · 4 Writer Cup points.</p></div>
-    <section class="card rule-card"><div class="rule-kicker">HOLES 1–6 · 1 POINT</div><h2>Foursomes · Alternate Shot</h2><p>One ball per team. Ben & Dylan tee off on odd holes. Joel & Brent tee off on even holes. Partners alternate until holed.</p><p>Lower team score wins the hole. Equal scores halve the hole. Most holes won takes the match point; a tied match gives ½ point each.</p><div class="rule-callout"><b>Hole 4 · NTP</b><br>All four hit. Joel and Brent remain the designated Foursomes tee players. Ben and Dylan's tee balls are NTP-only. Ball must finish on the putting green.</div></section>
-    <section class="card rule-card"><div class="rule-kicker">HOLES 7–12 · 1 POINT</div><h2>Four-Ball Match Play</h2><p>All four players play their own ball. Each team's lower individual score is its score for the hole. Equal low scores halve the hole.</p></section>
-    <section class="card rule-card"><div class="rule-kicker">HOLES 13–18 · 2 POINTS</div><h2>Singles Stableford Match Play</h2><p>Ben v Dylan and Joel v Brent. Stableford is calculated hole-by-hole using each player's official Daily Handicap and the White Tee stroke index. Higher points win the hole and points do not accumulate.</p><div class="rule-callout"><b>Hole 14 · Longest Drive</b><br>Random hitting order. Normal Singles tee balls remain live. Ball must finish on the fairway. If nobody does, nobody wins.</div></section>
-    <section class="card rule-card"><div class="rule-kicker">THE CUP</div><h2>4 points available</h2><p>2½ points wins outright. Berkeley Jail retain with 2 points. Itchy & Scratchy need 2½ to take possession. A 2–2 final is a draw and Berkeley Jail retain. No countback. No playoff.</p></section>
-    <section class="card rule-card"><div class="rule-kicker">GENERAL</div><h2>Match conditions</h2><p>White Tees throughout. No gimmies. R&A Rules of Golf and applicable Coast Local Rules apply unless modified here.</p><p><b>Banter is encouraged.</b> Coastal-wind complaints go to Brent. Missing cutlery remains a Committee matter.</p></section>
+  return `<div class="page-heading"><div class="eyebrow">Official Match Rules</div><h1>Writer Cup 2026</h1><p>18 holes · 4 Writer Cup points.</p></div>
+    <section class="card rule-card"><div class="rule-kicker">HOLES 1–6 · 1 POINT</div><h2>Writer Cup Scramble</h2><p>Both players from each team tee off. Tee shots should alternate between the teams rather than one team hitting twice in a row, for example <b>Joel, Dylan, Ben, Brent</b>. The team chooses which tee ball to continue with. The player whose tee ball is <b>not</b> selected plays the next shot. From that point, the partners alternate shots until the ball is holed.</p><p>Lower team gross score wins the hole. Equal scores halve the hole. Most holes won takes the match point; a tied six-hole match gives ½ point each.</p><div class="rule-callout"><b>Hole 4 · Nearest to the Pin</b><br>All four players tee off as part of the normal Writer Cup Scramble. All four tee shots are eligible for NTP. The ball must finish on the putting green.</div></section>
+    <section class="card rule-card"><div class="rule-kicker">HOLES 7–12 · 1 POINT</div><h2>Four-Ball · Combined Team Stableford</h2><p>All four players play their own ball. Stableford is calculated for each player using the official Daily Handicap and the White Tee stroke index.</p><p>Ben and Joel's Stableford points are <b>added together</b> for Berkeley Jail. Dylan and Brent's points are added together for Itchy &amp; Scratchy. The higher combined team Stableford total wins the hole; equal totals halve the hole. Most holes won takes the match point, with ½ point each if tied after Hole 12.</p></section>
+    <section class="card rule-card"><div class="rule-kicker">HOLES 13–18 · 2 POINTS</div><h2>Singles · Aggregate Stableford</h2><p>The pairings remain Ben v Dylan and Joel v Brent. Each player plays their own ball using their official Daily Handicap and the White Tee stroke index.</p><p>Stableford points <b>accumulate across all six holes</b>. There are no individual hole wins in Singles. After Hole 18, the higher six-hole Stableford total wins that Singles match and 1 Writer Cup point. Equal aggregate totals halve the match for ½ point each.</p><div class="rule-callout"><b>Hole 14 · Longest Drive</b><br>The official 1–4 hitting order is randomly drawn before teeing off. Normal Singles tee balls remain live. The ball must finish on the fairway to qualify. If nobody finds the fairway, nobody wins.</div></section>
+    <section class="card rule-card"><div class="rule-kicker">THE CUP</div><h2>4 points available</h2><p>2½ points wins outright. Berkeley Jail retain with 2 points. Itchy &amp; Scratchy need 2½ to take possession. A 2–2 final is an official draw and Berkeley Jail retain. No countback. No playoff.</p></section>
+    <section class="card rule-card"><div class="rule-kicker">GENERAL</div><h2>Match conditions</h2>
+      <p><b>Team colours:</b> Itchy &amp; Scratchy wear dark shirts. Berkeley Jail wear light shirts.</p>
+      <p>White Tees throughout. No gimmies. R&amp;A Rules of Golf and The Coast Golf Club Local Rules apply unless specifically modified by Writer Cup rules.</p>
+      <div class="rule-callout"><b>The Coast Local Rules</b><br>The Coast publishes current course conditions, out-of-bounds definitions, penalty-area markings, relief procedures, drop zones and temporary Local Rules. Key course-specific items include the 7th, 16th and 18th drop-zone provisions and the 12th-hole ventilation-pipe replay rule. Conditions and temporary Local Rules can change, so check the official page on the day.</div>
+      <a class="secondary-button link-button" href="https://www.coastgolf.com.au/cms/play/local-rules-course-conditions/" target="_blank" rel="noopener">VIEW THE COAST LOCAL RULES ↗</a>
+      <p><b>If you are unsure of a rule, refer to the Competition Director before continuing wherever practical.</b></p>
+      <p><b>Banter is encouraged.</b> Coastal-wind complaints go to Brent. Missing cutlery remains a Committee matter.</p>
+    </section>
     <button class="secondary-button" data-route="more">BACK</button>`;
 }
-
 function render(){
   const app=document.getElementById("app");
-  app.innerHTML=route==="home"?homeView():route==="live"?liveView():route==="score"?scoreView():route==="course"?courseView():route==="hole"?holeView():route==="players"?playersView():route==="player"?playerView():route==="profileEdit"?profileEditView():route==="card"?scorecardView():route==="rules"?rulesView():moreView();
+  app.innerHTML=route==="home"?homeView():route==="live"?liveView():route==="score"?scoreView():route==="course"?courseView():route==="hole"?holeView():route==="players"?playersView():route==="player"?playerView():route==="profileEdit"?profileEditView():route==="card"?scorecardView():route==="rules"?rulesView():route==="sponsors"?sponsorsView():moreView();
   document.querySelectorAll(".nav-item").forEach(b=>{
-    const active=(route==="hole"&&b.dataset.route==="course")||(route==="player"||route==="profileEdit"||route==="card"||route==="rules")&&b.dataset.route==="more"||b.dataset.route===route;
+    const active=(route==="hole"&&b.dataset.route==="course")||(route==="player"||route==="profileEdit"||route==="card"||route==="rules"||route==="sponsors")&&b.dataset.route==="more"||b.dataset.route===route;
     b.classList.toggle("active",active);
   });
   bindViewEvents();
 }
 function navigate(r){
-  if(r==="score"&&!scorerPin()&&!scoreBrowseHole)scoreBrowseHole=state.currentHole;
+  if(r==="score"&&!scoreBrowseHole)scoreBrowseHole=state.currentHole;
   route=r;render();window.scrollTo({top:0,behavior:"smooth"});
 }
 function openPlayer(id){selectedPlayerId=id;localStorage.setItem("writerCupSelectedProfile",id);route="player";render();window.scrollTo({top:0,behavior:"smooth"});}
@@ -669,11 +735,17 @@ function valueFrom(id){const el=document.getElementById(id);if(!el||el.value==="
 function shuffle(items){const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 
 async function saveScore(){
-  const h=state.currentHole,fmt=fmtForHole(h).key,score={};
-  if(fmt==="foursomes"){score.bj=valueFrom("bj");score.is=valueFrom("is");if(!score.bj||!score.is)return toast("Enter both team scores");}
-  else{if(fmt==="singles"&&!allDailyHandicapsSet())return toast("Set all Daily Handicaps first");for(const p of Object.keys(tournament.players))score[p]=valueFrom(p);if(Object.values(score).some(v=>!v))return toast("Enter all four gross scores");}
+  const h=displayedScoreHole(),fmt=fmtForHole(h).key,score={};
+  if(fmt==="scramble"){
+    score.bj=valueFrom("bj");score.is=valueFrom("is");
+    if(!score.bj||!score.is)return toast("Enter both team scores");
+  }else{
+    if(!allDailyHandicapsSet())return toast("Set all Daily Handicaps first");
+    for(const p of Object.keys(tournament.players))score[p]=valueFrom(p);
+    if(Object.values(score).some(v=>!v))return toast("Enter all four gross scores");
+  }
   state.scores[h]=score;saveLocalState();
-  const backendScores=fmt==="foursomes"?{bj:score.bj,is:score.is}:Object.fromEntries(Object.entries(score).map(([name,v])=>[playerIdFromName(name),v]));
+  const backendScores=fmt==="scramble"?{bj:score.bj,is:score.is}:Object.fromEntries(Object.entries(score).map(([name,v])=>[playerIdFromName(name),v]));
   const result=await rpcScorerWrite("writer_cup_save_hole",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_hole_number:h,p_scores:backendScores});
   if(!result.ok)return;
   if(h===4){
@@ -685,16 +757,16 @@ async function saveScore(){
     const winner=document.getElementById("longestWinnerSelect")?.value||state.sideGames.longestWinner;state.sideGames.longestWinner=winner;saveLocalState();
     await rpcScorerWrite("writer_cup_save_side_competition",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_competition_type:"longest_drive",p_winner_player_id:winner==="No winner"?null:playerIdFromName(winner),p_result_text:winner==="No winner"?"Nobody hit the fairway":"",p_hitting_order:state.sideGames.driveOrder});
   }
-  state.currentHole=Math.min(18,h+1);saveLocalState();toast(`Hole ${h} saved live`);render();
+  scoreBrowseHole=h;saveLocalState();toast(`Hole ${h} saved live · use > when ready for the next hole`);render();
 }
 async function clearHoleScores(){
-  const h=state.currentHole;
+  const h=displayedScoreHole();
   if(!Object.keys(getHoleScore(h)).length)return toast(`Hole ${h} has no saved scores`);
   if(!window.confirm(`Clear all saved golf scores for Hole ${h}?\n\nThis removes the hole from the live match and Cup calculation. NTP / Longest Drive results will stay untouched.`))return;
   const result=await rpcScorerWrite("writer_cup_clear_hole",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_hole_number:h});
   if(!result.ok)return;
   delete state.scores[h];
-  state.currentHole=h;
+  scoreBrowseHole=h;
   saveLocalState();
   await syncFromSupabase({quiet:true});
   toast(`Hole ${h} scores cleared`);
@@ -726,24 +798,24 @@ function bindViewEvents(){
   if(route==="live"){const r=document.getElementById("manualRefresh");if(r)r.onclick=()=>syncFromSupabase();}
   if(route==="score"){
     const canEdit=Boolean(scorerPin());
-    const shownHole=()=>canEdit?state.currentHole:(scoreBrowseHole||state.currentHole);
-    document.getElementById("prevHole").onclick=()=>{if(canEdit){state.currentHole=Math.max(1,state.currentHole-1);saveLocalState();}else scoreBrowseHole=Math.max(1,shownHole()-1);render();};
-    document.getElementById("nextHole").onclick=()=>{if(canEdit){state.currentHole=Math.min(18,state.currentHole+1);saveLocalState();}else scoreBrowseHole=Math.min(18,shownHole()+1);render();};
+    const shownHole=()=>displayedScoreHole();
+    document.getElementById("prevHole").onclick=()=>{scoreBrowseHole=Math.max(1,shownHole()-1);render();};
+    document.getElementById("nextHole").onclick=()=>{scoreBrowseHole=Math.min(18,shownHole()+1);render();};
     if(canEdit){
       document.querySelectorAll("[data-step]").forEach(btn=>btn.onclick=()=>{
-        const input=document.getElementById(btn.dataset.step),hole=tournament.holes[state.currentHole-1],current=Number(input.value)||hole.par;
+        const input=document.getElementById(btn.dataset.step),hole=tournament.holes[displayedScoreHole()-1],current=Number(input.value)||hole.par;
         input.value=Math.max(1,Math.min(20,current+Number(btn.dataset.delta)));
-        if(hole.n>=13)refreshStablefordUnderScore(btn.dataset.step,hole);
+        if(hole.n>=7)refreshStablefordUnderScore(btn.dataset.step,hole);
       });
-      if(state.currentHole>=13){
-        Object.keys(tournament.players).forEach(name=>{const input=document.getElementById(name);if(input)input.oninput=()=>refreshStablefordUnderScore(name,tournament.holes[state.currentHole-1]);});
+      if(displayedScoreHole()>=7){
+        Object.keys(tournament.players).forEach(name=>{const input=document.getElementById(name);if(input)input.oninput=()=>refreshStablefordUnderScore(name,tournament.holes[displayedScoreHole()-1]);});
       }
       const draw=document.getElementById("drawOrder");if(draw)draw.onclick=drawHole14Order;
       const save=document.getElementById("saveScore");if(save)save.onclick=saveScore;
       const clearScores=document.getElementById("clearHoleScores");if(clearScores)clearScores.onclick=clearHoleScores;
-      const lock=document.getElementById("lockScorer");if(lock)lock.onclick=()=>{scoreBrowseHole=state.currentHole;clearScorerPin();toast("Scorer mode locked · read-only view");render();};
+      const lock=document.getElementById("lockScorer");if(lock)lock.onclick=()=>{scoreBrowseHole=displayedScoreHole();clearScorerPin();toast("Scorer mode locked · read-only view");render();};
     }else{
-      const unlock=document.getElementById("unlockScorer");if(unlock)unlock.onclick=()=>{const pin=requireScorerPin();if(!pin)return;state.currentHole=scoreBrowseHole||state.currentHole;scoreBrowseHole=null;saveLocalState();toast("Scorer mode unlocked");render();};
+      const unlock=document.getElementById("unlockScorer");if(unlock)unlock.onclick=()=>{const pin=requireScorerPin();if(!pin)return;scoreBrowseHole=scoreBrowseHole||state.currentHole;saveLocalState();toast("Scorer mode unlocked");render();};
     }
     document.getElementById("scoreHoleGuide").onclick=()=>openHole(shownHole());
   }
@@ -754,7 +826,7 @@ function bindViewEvents(){
     const guideDraw=document.getElementById("guideDrawOrder");if(guideDraw)guideDraw.onclick=drawHole14Order;
     const prev=document.getElementById("previousGuide"),next=document.getElementById("nextGuide");
     if(prev)prev.onclick=()=>openHole(selectedCourseHole-1);if(next)next.onclick=()=>openHole(selectedCourseHole+1);
-    document.getElementById("scoreThisHole").onclick=()=>{if(scorerPin()){state.currentHole=selectedCourseHole;saveLocalState();}else scoreBrowseHole=selectedCourseHole;navigate("score");};
+    document.getElementById("scoreThisHole").onclick=()=>{scoreBrowseHole=selectedCourseHole;navigate("score");};
     const select=document.getElementById("devicePlayerSelect");if(select)select.onchange=()=>{setDevicePlayerId(select.value);render();};
     document.querySelectorAll(".save-hole-note").forEach(b=>b.onclick=()=>{const id=b.dataset.notePlayer,hole=Number(b.dataset.noteHole),text=document.getElementById(`holeNote-${id}`).value;saveSharedNote(id,hole,text);});
   }
@@ -785,7 +857,7 @@ function bindViewEvents(){
       if(result.ok){Object.keys(tournament.players).forEach(n=>state.dailyHandicaps[n]=values[tournament.players[n].id]);saveLocalState();toast("Daily Handicaps saved live");render();}
     };
     document.querySelectorAll("[data-action]").forEach(b=>b.onclick=()=>{
-      const a=b.dataset.action;if(a==="players")navigate("players");if(a==="card")navigate("card");if(a==="rules")navigate("rules");if(a==="refresh")syncFromSupabase();if(a==="weather"){state.weather={status:"loading"};render();loadWeather({force:true});}if(a==="lock"){clearScorerPin();toast("Scorer mode locked");}
+      const a=b.dataset.action;if(a==="players")navigate("players");if(a==="card")navigate("card");if(a==="rules")navigate("rules");if(a==="sponsors")navigate("sponsors");if(a==="refresh")syncFromSupabase();if(a==="weather"){state.weather={status:"loading"};render();loadWeather({force:true});}if(a==="lock"){clearScorerPin();toast("Scorer mode locked");}
     });
   }
 }

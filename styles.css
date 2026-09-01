@@ -597,3 +597,16 @@ body.photo-modal-open { overflow:hidden; }
   transform: translateY(-1px);
   display: inline-block;
 }
+
+
+/* V6 scoring + sponsors */
+.progress i.played { background:#376748; border-color:#376748; opacity:.7; }
+.aggregate-score { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:10px; margin:10px 0 6px; padding:10px 12px; border-radius:14px; background:#F5F8F4; border:1px solid rgba(55,103,72,.18); text-align:center; }
+.aggregate-score b { color:#001638; font-size:.92rem; }
+.aggregate-score span { color:#657387; font-size:.66rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+.aggregate-result small { display:block; margin-top:6px; color:#657387; font-size:.68rem; }
+.sponsor-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:0 0 14px; }
+.sponsor-card { min-height:108px; padding:16px; display:flex; flex-direction:column; justify-content:space-between; border-color:rgba(196,147,53,.28); background:#fffaf0; }
+.sponsor-card span { color:#9A6B18; font-size:.68rem; font-weight:900; letter-spacing:.12em; }
+.sponsor-card strong { color:#001638; font-size:.92rem; line-height:1.2; }
+@media (max-width:380px){ .aggregate-score{gap:6px;padding:9px 8px;} .aggregate-score b{font-size:.8rem;} .aggregate-score span{font-size:.58rem;} }
