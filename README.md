@@ -27,3 +27,5 @@ Ben v Dylan and Joel v Brent remain the Singles pairings. Stableford points accu
 
 ## Realtime and data
 Scores are stored in Supabase and broadcast with Supabase Realtime. Spectators remain read-only unless scorer mode is unlocked. Existing profile, photo, course-guide and note data are preserved.
+
+V6 production deployment
