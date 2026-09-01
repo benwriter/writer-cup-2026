@@ -658,7 +658,7 @@ function profileEditView(){
   return `<div class="page-heading"><div class="eyebrow">Scorer controlled</div><h1>Edit ${escapeHTML(p.display_name)}</h1><p>Everyone can view profiles. Only scorer mode can change the photo or biography.</p></div>
     <section class="card profile-edit-card"><div class="profile-edit-photo">${playerAvatar(p,true)}<label class="file-button">CHOOSE PHOTO<input id="profilePhotoFile" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif"></label><small>JPG, PNG, WEBP or iPhone HEIC · max 5 MB</small><button class="secondary-button" id="uploadProfilePhoto">UPLOAD PHOTO</button></div>
     <label class="field-label">PROFILE TITLE<input id="profileTitleInput" maxlength="120" value="${escapeHTML(p.profile_title||"")}" placeholder="e.g. The Chief"></label>
-    <label class="field-label">BIOGRAPHY<textarea id="profileBioInput" maxlength="2500" placeholder="Add the player biography…">${escapeHTML(p.bio||"")}</textarea></label>
+    <label class="field-label">BIOGRAPHY<textarea id="profileBioInput" maxlength="4000" placeholder="Add the player biography…">${escapeHTML(p.bio||"")}</textarea></label>
     <button class="primary-button" id="saveProfile">SAVE PROFILE</button><button class="text-button" id="cancelProfileEdit">CANCEL</button></section>`;
 }
 function scorecardView(){
