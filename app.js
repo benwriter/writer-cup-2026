@@ -468,21 +468,28 @@ function playerCard(p){
   const team=formatTeamNameById(p.team_id),key=playerNameFromId(p.id),hcp=state.dailyHandicaps[key];
   return `<button class="card player-card player-button" data-player="${p.id}">${playerAvatar(p)}<strong>${escapeHTML(p.display_name)}</strong><small>${escapeHTML(p.profile_title||"Player profile")}</small><small>Daily HCP: ${Number.isFinite(hcp)?hcp:"TBC"}</small><small class="team-label">${escapeHTML(team)}</small></button>`;
 }
-function progressBars(results){return results.map(r=>`<i class="${r||""}"></i>`).join("");}
+function progressBars(results,startHole=1){
+  const labels={bj:"Berkeley Jail",is:"Itchy & Scratchy",halved:"Halved",played:"Scored"};
+  return results.map((r,i)=>`<i class="${r||""}" title="Hole ${startHole+i} · ${r?(labels[r]||"Scored"):"Not scored"}"></i>`).join("");
+}
+function liveResultLegend(){
+  return `<div style="display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:0 2px 12px;color:var(--muted);font-size:.72rem"><span style="display:inline-flex;align-items:center;gap:6px"><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#c79b35"></i>Berkeley Jail</span><span style="display:inline-flex;align-items:center;gap:6px"><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#6d829a"></i>Itchy &amp; Scratchy</span><span style="display:inline-flex;align-items:center;gap:6px"><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--green)"></i>Halved</span></div>`;
+}
 function liveView(){
   const cup=cupState();
   const aggregateProgress=s=>Array.from({length:6},(_,i)=>i<s.played?"played":"");
   return `<div class="page-heading"><div class="eyebrow">Match centre · ${connectionLabel()}</div><h1>Live Writer Cup</h1><p>Every completed match feeds the four-point Cup score automatically.</p></div>
     ${cupScoreCard()}
     <div class="section-title"><h2>Matches</h2><span>Live scoring</span></div>
-    <section class="card segment-card"><div class="segment-head"><strong>Writer Cup Scramble</strong><span>Holes 1–6 · 1 pt</span></div><div class="segment-status">${cup.scramble.status}</div><div class="progress">${progressBars(resultsFor("scramble"))}</div></section>
-    <section class="card segment-card"><div class="segment-head"><strong>Combined Team Stableford</strong><span>Holes 7–12 · 1 pt</span></div><div class="segment-status">${cup.fourball.status}</div><div class="progress">${progressBars(resultsFor("fourball"))}</div></section>
+    ${liveResultLegend()}
+    <section class="card segment-card"><div class="segment-head"><strong>Writer Cup Scramble</strong><span>Holes 1–6 · 1 pt</span></div><div class="segment-status">${cup.scramble.status}</div><div class="progress">${progressBars(resultsFor("scramble"),1)}</div></section>
+    <section class="card segment-card"><div class="segment-head"><strong>Combined Team Stableford</strong><span>Holes 7–12 · 1 pt</span></div><div class="segment-status">${cup.fourball.status}</div><div class="progress">${progressBars(resultsFor("fourball"),7)}</div></section>
     <section class="card segment-card aggregate-card"><div class="segment-head"><strong>Ben v Dylan</strong><span>Aggregate Singles · 1 pt</span></div><div class="segment-status">${cup.benDylan.status}</div><div class="aggregate-score"><b>Ben ${cup.benDylan.aTotal}</b><span>${cup.benDylan.played} of 6 holes scored</span><b>Dylan ${cup.benDylan.bTotal}</b></div><div class="progress">${progressBars(aggregateProgress(cup.benDylan))}</div></section>
     <section class="card segment-card aggregate-card"><div class="segment-head"><strong>Joel v Brent</strong><span>Aggregate Singles · 1 pt</span></div><div class="segment-status">${cup.joelBrent.status}</div><div class="aggregate-score"><b>Joel ${cup.joelBrent.aTotal}</b><span>${cup.joelBrent.played} of 6 holes scored</span><b>Brent ${cup.joelBrent.bTotal}</b></div><div class="progress">${progressBars(aggregateProgress(cup.joelBrent))}</div></section>
     <button class="secondary-button" id="manualRefresh">REFRESH LIVE DATA</button>`;
 }
 function stepper(id,label,detail,value,readOnly=false,stablefordLine=""){
-  return `<div class="score-input-row ${readOnly?"read-only":""}"><div class="score-input-copy"><strong>${label}</strong><small>${detail}</small></div><div class="score-control-stack"><div class="stepper"><button data-step="${id}" data-delta="-1" ${readOnly?"disabled":""} aria-label="Decrease ${escapeHTML(label)} score">−</button><input id="${id}" inputmode="numeric" pattern="[0-9]*" value="${value??""}" placeholder="–" ${readOnly?"readonly":""} aria-label="${escapeHTML(label)} gross score"><button data-step="${id}" data-delta="1" ${readOnly?"disabled":""} aria-label="Increase ${escapeHTML(label)} score">+</button></div>${stablefordLine?`<small class="stableford-under-score" id="sf-${id}">${stablefordLine}</small>`:""}</div></div>`;
+  return `<div class="score-input-row ${readOnly?"read-only":""}"><div class="score-input-copy"><strong>${label}</strong><small>${detail}</small></div><div class="score-control-stack"><div class="stepper"><button data-step="${id}" data-delta="-1" ${readOnly?"disabled":""} aria-label="Decrease ${escapeHTML(label)} score">−</button><input id="${id}" inputmode="numeric" pattern="[0-9]*" value="${value??(readOnly?"":0)}" placeholder="–" ${readOnly?"readonly":""} aria-label="${escapeHTML(label)} gross score"><button data-step="${id}" data-delta="1" ${readOnly?"disabled":""} aria-label="Increase ${escapeHTML(label)} score">+</button></div>${stablefordLine?`<small class="stableford-under-score" id="sf-${id}">${stablefordLine}</small>`:""}</div></div>`;
 }
 function stablefordPreview(name,hole,gross){
   if(!Number.isFinite(state.dailyHandicaps[name]))return"Daily HCP required";
@@ -731,7 +738,7 @@ function navigate(r){
 }
 function openPlayer(id){selectedPlayerId=id;localStorage.setItem("writerCupSelectedProfile",id);route="player";render();window.scrollTo({top:0,behavior:"smooth"});}
 function openHole(n){selectedCourseHole=Math.max(1,Math.min(18,Number(n)));localStorage.setItem("writerCupSelectedCourseHole",String(selectedCourseHole));route="hole";render();window.scrollTo({top:0,behavior:"smooth"});}
-function valueFrom(id){const el=document.getElementById(id);if(!el||el.value==="")return undefined;const n=Number(el.value);return Number.isFinite(n)?Math.max(1,Math.min(20,n)):undefined;}
+function valueFrom(id){const el=document.getElementById(id);if(!el||el.value==="")return undefined;const n=Number(el.value);return Number.isFinite(n)&&n>=1?Math.min(20,n):undefined;}
 function shuffle(items){const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 
 async function saveScore(){
@@ -803,8 +810,8 @@ function bindViewEvents(){
     document.getElementById("nextHole").onclick=()=>{scoreBrowseHole=Math.min(18,shownHole()+1);render();};
     if(canEdit){
       document.querySelectorAll("[data-step]").forEach(btn=>btn.onclick=()=>{
-        const input=document.getElementById(btn.dataset.step),hole=tournament.holes[displayedScoreHole()-1],current=Number(input.value)||hole.par;
-        input.value=Math.max(1,Math.min(20,current+Number(btn.dataset.delta)));
+        const input=document.getElementById(btn.dataset.step),hole=tournament.holes[displayedScoreHole()-1],parsed=Number(input.value),current=Number.isFinite(parsed)?parsed:0;
+        input.value=Math.max(0,Math.min(20,current+Number(btn.dataset.delta)));
         if(hole.n>=7)refreshStablefordUnderScore(btn.dataset.step,hole);
       });
       if(displayedScoreHole()>=7){
