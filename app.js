@@ -814,6 +814,9 @@ async function clearHoleScores(){
   render();
 }
 async function uploadProfilePhoto(){
+  // Keep any unsaved title / biography text while the photo upload refreshes the profile.
+  const titleDraft=document.getElementById("profileTitleInput")?.value??"";
+  const bioDraft=document.getElementById("profileBioInput")?.value??"";
   const file=document.getElementById("profilePhotoFile")?.files?.[0];
   if(!file)return toast("Choose a photo first");
   const pin=requireScorerPin();if(!pin)return;
@@ -826,8 +829,41 @@ async function uploadProfilePhoto(){
       if((data.error||"").toLowerCase().includes("invalid scorer pin"))clearScorerPin();
       throw new Error(data.error||"Upload failed");
     }
-    state.profiles[selectedPlayerId]={...profileFor(selectedPlayerId),photo_url:data.photo_url};saveLocalState();toast("Profile photo updated");await syncFromSupabase({quiet:true});render();
+    state.profiles[selectedPlayerId]={...profileFor(selectedPlayerId),photo_url:data.photo_url};
+    saveLocalState();
+    await syncFromSupabase({quiet:true});
+    const titleInput=document.getElementById("profileTitleInput");
+    const bioInput=document.getElementById("profileBioInput");
+    if(titleInput)titleInput.value=titleDraft;
+    if(bioInput)bioInput.value=bioDraft;
+    toast("Profile photo updated · text kept");
   }catch(e){toast(e.message||"Photo upload failed");}
+}
+
+async function savePlayerProfile(){
+  const title=document.getElementById("profileTitleInput")?.value??"";
+  const bio=document.getElementById("profileBioInput")?.value??"";
+  const pin=requireScorerPin();if(!pin)return;
+  if(!navigator.onLine||!db)return toast("Connect to the internet to save profile text");
+  toast("Saving profile…");
+  const {error}=await db.rpc("writer_cup_update_player_profile",{
+    p_tournament_id:CONFIG.TOURNAMENT_ID,
+    p_player_id:selectedPlayerId,
+    p_profile_title:title,
+    p_bio:bio,
+    p_pin:pin
+  });
+  if(error){
+    if((error.message||"").toLowerCase().includes("invalid scorer pin")){clearScorerPin();toast("Incorrect scorer PIN");return;}
+    toast(error.message||"Profile could not be saved");
+    return;
+  }
+  await syncFromSupabase({quiet:true});
+  const saved=profileFor(selectedPlayerId);
+  const verified=(saved.profile_title||"")===title.trim()&&(saved.bio||"")===bio.trim();
+  if(!verified)return toast("Profile save could not be verified · try again");
+  toast("Profile saved live");
+  openPlayer(selectedPlayerId);
 }
 
 function bindViewEvents(){
@@ -883,11 +919,7 @@ function bindViewEvents(){
   }
   if(route==="profileEdit"){
     document.getElementById("uploadProfilePhoto").onclick=uploadProfilePhoto;
-    document.getElementById("saveProfile").onclick=async()=>{
-      const title=document.getElementById("profileTitleInput").value,bio=document.getElementById("profileBioInput").value;
-      const result=await rpcScorerWrite("writer_cup_update_player_profile",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_player_id:selectedPlayerId,p_profile_title:title,p_bio:bio});
-      if(result.ok){state.profiles[selectedPlayerId]={...profileFor(selectedPlayerId),profile_title:title,bio};saveLocalState();toast("Profile saved");await syncFromSupabase({quiet:true});openPlayer(selectedPlayerId);}
-    };
+    document.getElementById("saveProfile").onclick=savePlayerProfile;
     document.getElementById("cancelProfileEdit").onclick=()=>openPlayer(selectedPlayerId);
   }
   if(route==="more"){
@@ -910,6 +942,10 @@ document.getElementById("moreButton").onclick=()=>navigate("more");
 window.addEventListener("keydown",e=>{if(e.key==="Escape")closePhotoModal();});
 window.addEventListener("online",()=>{state.connection="connecting";saveLocalState();syncFromSupabase({quiet:true}).then(flushPendingWrites);loadWeather();});
 window.addEventListener("offline",()=>{state.connection="offline";saveLocalState();render();});
+
+// Older profile-save failures were incorrectly queued as offline writes.
+// Profile text now saves online with explicit verification, so discard only those stale profile writes.
+setPendingWrites(pendingWrites().filter(item=>item.type!=="writer_cup_update_player_profile"));
 
 render();
 loadWeather();
