@@ -1,5 +1,5 @@
-// WRITER CUP V7 · MANUAL COURSE · 2026-09-02
-// V7 adds phone-editable Manual Course setup while preserving the V6 scoring engine.
+// WRITER CUP V7.1 · COURSE SETUP SECURITY + TOUCH POLISH · 2026-09-02
+// V7.1 fully locks Course Setup until the scorer PIN is backend-verified and enlarges side-comp selectors.
 
 const CONFIG = window.WRITER_CUP_CONFIG;
 const DATA = window.WRITER_CUP_DATA;
@@ -70,7 +70,28 @@ function devicePlayerId() { return localStorage.getItem("writerCupDevicePlayer")
 function setDevicePlayerId(id) { id ? localStorage.setItem("writerCupDevicePlayer", id) : localStorage.removeItem("writerCupDevicePlayer"); }
 function scorerPin() { return sessionStorage.getItem("writerCupScorerPin") || ""; }
 function setScorerPin(pin) { sessionStorage.setItem("writerCupScorerPin", pin); }
-function clearScorerPin() { sessionStorage.removeItem("writerCupScorerPin"); }
+function clearScorerPin() {
+  sessionStorage.removeItem("writerCupScorerPin");
+  sessionStorage.removeItem("writerCupCourseSetupUnlocked");
+}
+function courseSetupUnlocked(){return Boolean(scorerPin())&&sessionStorage.getItem("writerCupCourseSetupUnlocked")==="1";}
+async function unlockCourseSetup(){
+  if(!navigator.onLine||!db)return toast("Connect to the internet to unlock Course Setup");
+  let pin=scorerPin();
+  if(!pin){
+    pin=window.prompt("Scorer PIN");
+    if(!pin)return;
+    pin=String(pin).trim();
+    if(!/^\d{4,6}$/.test(pin))return toast("Enter the 4–6 digit scorer PIN");
+  }
+  toast("Checking scorer PIN…");
+  const {data,error}=await db.rpc("writer_cup_valid_pin",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_pin:pin});
+  if(error||data!==true){clearScorerPin();toast("Incorrect scorer PIN");return;}
+  setScorerPin(pin);
+  sessionStorage.setItem("writerCupCourseSetupUnlocked","1");
+  toast("Course Setup unlocked");
+  render();
+}
 
 function requireScorerPin() {
   let pin = scorerPin();
@@ -828,12 +849,15 @@ function devicePlayerPanel(){
   return `<section class="card settings-card"><strong>This phone belongs to</strong><p>This is only a convenience setting, not a login. It decides which shared note box is editable on this phone.</p><select class="device-player-select" id="hqDevicePlayer"><option value="">Choose player…</option>${Object.keys(tournament.players).map(name=>{const id=tournament.players[name].id;return`<option value="${id}" ${me===id?"selected":""}>${name}</option>`}).join("")}</select></section>`;
 }
 function manualCourseSetupView(){
+  if(!courseSetupUnlocked())return `<div class="page-heading"><div class="eyebrow">Scorer controlled</div><h1>Course Setup</h1><p>Course configuration is protected so tournament settings cannot be changed accidentally.</p></div>
+    <section class="card settings-card"><strong>🔒 COURSE SETUP LOCKED</strong><p>Enter the scorer PIN to view or change Standard / Manual Course settings, hole values, NTP or Longest Drive.</p><button class="primary-button" id="unlockCourseSetup">UNLOCK COURSE SETUP</button></section>
+    <button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
   const cs=state.courseSettings,holes=normalizeManualHoles(cs.holes),h=holes[selectedManualHole-1],configured=holes.filter(holeSetupComplete).length;
   const options=Array.from({length:18},(_,i)=>`<option value="${i+1}" ${(i+1)===Number(cs.ntpHole)?"selected":""}>Hole ${i+1}</option>`).join("");
   const ldOptions=Array.from({length:18},(_,i)=>`<option value="${i+1}" ${(i+1)===Number(cs.longestDriveHole)?"selected":""}>Hole ${i+1}</option>`).join("");
   return `<div class="page-heading"><div class="eyebrow">Scorer controlled</div><h1>Course Setup</h1><p>Standard Course stays preloaded. Manual Course is a universal 18-hole backup that can be completed progressively from this phone.</p></div>
     <section class="card settings-card"><strong>ACTIVE COURSE</strong><p><b>${manualCourseActive()?"Manual Course":"Standard Course · The Coast"}</b></p><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button class="secondary-button" id="activateStandardCourse" ${manualCourseActive()?"":"disabled"}>USE STANDARD</button><button class="primary-button" id="activateManualCourse" ${manualCourseActive()?"disabled":""}>USE MANUAL</button></div><small>Switching is locked once Stableford scoring has started. If Manual Course may be needed, activate it before the round and enter each hole as you reach it.</small></section>
-    <section class="card settings-card"><strong>MANUAL COURSE OPTIONS</strong><p>${configured}/18 holes currently have Par + SI entered.</p><label class="field-label">COURSE NAME · OPTIONAL<input id="manualCourseName" maxlength="80" value="${escapeHTML(cs.courseName||"")}" placeholder="e.g. The Coast · Temporary Routing"></label><label class="field-label">TEE · OPTIONAL<input id="manualCourseTee" maxlength="40" value="${escapeHTML(cs.tee||"")}" placeholder="White / Gold / Red / Blue"></label><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label class="field-label">NTP HOLE<select id="manualNtpHole">${options}</select></label><label class="field-label">LONGEST DRIVE<select id="manualLdHole">${ldOptions}</select></label></div><button class="secondary-button" id="saveManualCourseOptions">SAVE COURSE OPTIONS</button><small>Longest Drive's random 1–4 tee order stays attached to the Longest Drive competition wherever you move it.</small></section>
+    <section class="card settings-card"><strong>MANUAL COURSE OPTIONS</strong><p>${configured}/18 holes currently have Par + SI entered.</p><label class="field-label">COURSE NAME · OPTIONAL<input id="manualCourseName" maxlength="80" value="${escapeHTML(cs.courseName||"")}" placeholder="e.g. The Coast · Temporary Routing"></label><label class="field-label">TEE · OPTIONAL<input id="manualCourseTee" maxlength="40" value="${escapeHTML(cs.tee||"")}" placeholder="White / Gold / Red / Blue"></label><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="field-label">🎯 NTP HOLE<select id="manualNtpHole" style="min-height:56px;font-size:1.05rem;font-weight:800;padding:0 12px">${options}</select></label><label class="field-label">🚀 LONGEST DRIVE<select id="manualLdHole" style="min-height:56px;font-size:1.05rem;font-weight:800;padding:0 12px">${ldOptions}</select></label></div><button class="secondary-button" id="saveManualCourseOptions">SAVE COURSE OPTIONS</button><small>Longest Drive's random 1–4 tee order stays attached to the Longest Drive competition wherever you move it.</small></section>
     <div class="section-title"><h2>Manual holes</h2><span>${configured}/18 ready</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">${holes.map(x=>`<button class="secondary-button manual-hole-pick" data-manual-hole="${x.n}" style="padding:10px 6px;${x.n===selectedManualHole?"outline:2px solid var(--gold);":""}"><b>H${x.n}</b><small style="display:block">${holeSetupComplete(x)?`P${x.par} · SI${x.si}`:"Not set"}</small></button>`).join("")}</div>
     <section class="card settings-card"><strong>HOLE ${h.n}</strong><p>${holeSetupComplete(h)?`Par ${h.par} · SI ${h.si}${Number.isFinite(h.m)?` · ${h.m}m`:""}`:"Enter Par and Stroke Index before scoring this hole."}</p><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px"><label class="field-label">PAR<input id="manualSetupPar" inputmode="numeric" value="${manualHoleInputValue(h.par)}" placeholder="4"></label><label class="field-label">SI<input id="manualSetupSi" inputmode="numeric" value="${manualHoleInputValue(h.si)}" placeholder="1–18"></label><label class="field-label">METRES<input id="manualSetupMetres" inputmode="numeric" value="${manualHoleInputValue(h.m)}" placeholder="optional"></label></div><button class="primary-button" id="saveManualSetupHole">SAVE HOLE ${h.n}</button><button class="text-button" id="clearManualSetupHole">CLEAR HOLE ${h.n} VALUES</button></section>
     <button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
@@ -1067,6 +1091,7 @@ function bindViewEvents(){
     document.getElementById("cancelProfileEdit").onclick=()=>openPlayer(selectedPlayerId);
   }
   if(route==="courseSetup"){
+    const unlock=document.getElementById("unlockCourseSetup");if(unlock){unlock.onclick=unlockCourseSetup;return;}
     const std=document.getElementById("activateStandardCourse");if(std)std.onclick=()=>setCourseMode("standard");
     const manual=document.getElementById("activateManualCourse");if(manual)manual.onclick=()=>setCourseMode("manual");
     const saveOptions=document.getElementById("saveManualCourseOptions");if(saveOptions)saveOptions.onclick=saveManualCourseOptions;
