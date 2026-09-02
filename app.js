@@ -1,5 +1,5 @@
-// WRITER CUP V7.1 · COURSE SETUP SECURITY + TOUCH POLISH · 2026-09-02
-// V7.1 fully locks Course Setup until the scorer PIN is backend-verified and enlarges side-comp selectors.
+// WRITER CUP V7.2 · SPLIT STROKE INDEX + COURSE SETUP POLISH · 2026-09-03
+// V7.2 supports optional 19–36 second Stroke Index values for exact split-index Stableford allocation.
 
 const CONFIG = window.WRITER_CUP_CONFIG;
 const DATA = window.WRITER_CUP_DATA;
@@ -12,7 +12,7 @@ const db = window.supabase
   : null;
 
 function blankManualHoles(){
-  return Array.from({length:18},(_,i)=>({n:i+1,par:null,si:null,m:null}));
+  return Array.from({length:18},(_,i)=>({n:i+1,par:null,si:null,si2:null,m:null}));
 }
 function numberOrNull(value){
   if(value===null||value===undefined||value==="")return null;
@@ -22,7 +22,7 @@ function normalizeManualHoles(items){
   const byNumber=new Map((Array.isArray(items)?items:[]).map(h=>[Number(h?.n),h]));
   return Array.from({length:18},(_,i)=>{
     const n=i+1,h=byNumber.get(n)||{};
-    return {n,par:numberOrNull(h.par),si:numberOrNull(h.si),m:numberOrNull(h.m)};
+    return {n,par:numberOrNull(h.par),si:numberOrNull(h.si),si2:numberOrNull(h.si2),m:numberOrNull(h.m)};
   });
 }
 
@@ -128,9 +128,13 @@ function longestDriveHoleNumber(){return manualCourseActive()?Number(state.cours
 function activeCourseName(){return manualCourseActive()?(state.courseSettings?.courseName||"Manual Course"):"The Coast";}
 function activeTeeName(){return manualCourseActive()?(state.courseSettings?.tee||"Tee not set"):"White Tees";}
 function courseValue(value,suffix=""){return Number.isFinite(value)?`${value}${suffix}`:"—";}
+function strokeIndexLabel(hole){
+  if(!Number.isFinite(hole?.si))return "—";
+  return Number.isFinite(hole?.si2)?`${hole.si} / ${hole.si2}`:String(hole.si);
+}
 function manualModeBanner(){
   if(!manualCourseActive())return"";
-  return `<div class="notice warning" style="margin-bottom:14px"><b>⚠ MANUAL COURSE ACTIVE</b><br>${escapeHTML(activeCourseName())}${state.courseSettings?.tee?` · ${escapeHTML(state.courseSettings.tee)}`:""}. Par and Stroke Index entered in Manual Course control Stableford calculations.</div>`;
+  return `<div class="notice warning" style="margin-bottom:14px"><b>⚠ MANUAL COURSE ACTIVE</b><br>${escapeHTML(activeCourseName())}${state.courseSettings?.tee?` · ${escapeHTML(state.courseSettings.tee)}`:""}. Par and Stroke Index values entered in Manual Course control Stableford calculations, including an optional second index for split-index cards.</div>`;
 }
 function scrambleTeeNote(hole) {
   const base = hole===ntpHoleNumber()
@@ -166,14 +170,20 @@ function profileFor(id) {
 function noteKey(id, hole=null) { return `${id}:${hole === null ? "general" : `hole-${hole}`}`; }
 function noteFor(id, hole=null) { return state.notes[noteKey(id,hole)]?.note_text || ""; }
 
-function stablefordStrokesReceived(dailyHcp, strokeIndex) {
+function stablefordStrokesReceived(dailyHcp, strokeIndex, secondStrokeIndex=null) {
   if (!Number.isFinite(dailyHcp) || !Number.isFinite(strokeIndex)) return null;
-  if (dailyHcp <= 0 || dailyHcp < strokeIndex) return 0;
-  return Math.floor((dailyHcp - strokeIndex) / 18) + 1;
+  if (dailyHcp <= 0) return 0;
+  let strokes=0;
+  if(dailyHcp>=strokeIndex)strokes++;
+  const secondThreshold=Number.isFinite(secondStrokeIndex)?secondStrokeIndex:strokeIndex+18;
+  if(dailyHcp>=secondThreshold)strokes++;
+  // For Daily Handicaps above 36, continue the normal 18-stroke cycle for the third stroke.
+  if(dailyHcp>=strokeIndex+36)strokes++;
+  return strokes;
 }
-function stablefordPoints(gross, par, dailyHcp, strokeIndex) {
+function stablefordPoints(gross, par, dailyHcp, strokeIndex, secondStrokeIndex=null) {
   if (!Number.isFinite(gross) || gross <= 0 || !Number.isFinite(par) || !Number.isFinite(strokeIndex)) return null;
-  const strokes=stablefordStrokesReceived(dailyHcp,strokeIndex);
+  const strokes=stablefordStrokesReceived(dailyHcp,strokeIndex,secondStrokeIndex);
   if(!Number.isFinite(strokes))return null;
   return Math.max(0, 2 + par - (gross - strokes));
 }
@@ -184,7 +194,7 @@ function teamStablefordTotals(hole) {
   if(!h||!holeSetupComplete(h)||!allDailyHandicapsSet())return null;
   const names=["Ben","Joel","Dylan","Brent"];
   if(names.some(name=>!Number.isFinite(s[name])))return null;
-  const pts=Object.fromEntries(names.map(name=>[name,stablefordPoints(s[name],h.par,state.dailyHandicaps[name],h.si)]));
+  const pts=Object.fromEntries(names.map(name=>[name,stablefordPoints(s[name],h.par,state.dailyHandicaps[name],h.si,h.si2)]));
   if(Object.values(pts).some(v=>!Number.isFinite(v)))return null;
   return {bj:pts.Ben+pts.Joel,is:pts.Dylan+pts.Brent,players:pts};
 }
@@ -204,7 +214,7 @@ function teamHoleWinner(hole) {
 function playerStablefordForHole(name,hole) {
   const h=activeHole(hole),s=getHoleScore(hole);
   if(!h||!holeSetupComplete(h)||!Number.isFinite(s[name])||!Number.isFinite(state.dailyHandicaps[name]))return null;
-  return stablefordPoints(s[name],h.par,state.dailyHandicaps[name],h.si);
+  return stablefordPoints(s[name],h.par,state.dailyHandicaps[name],h.si,h.si2);
 }
 function singlesAggregateState(match) {
   const [a,b]=match;
@@ -488,27 +498,29 @@ async function setCourseMode(mode){
   if(await persistCourseSettings(next,{message:`${mode==="manual"?"Manual":"Standard"} Course activated`}))render();
 }
 function manualHoleInputValue(v){return Number.isFinite(v)?String(v):"";}
-async function saveManualHoleFromInputs(holeNumber,{parId,siId,metresId}){
+async function saveManualHoleFromInputs(holeNumber,{parId,siId,si2Id,metresId}){
   const parRaw=document.getElementById(parId)?.value.trim()??"";
   const siRaw=document.getElementById(siId)?.value.trim()??"";
+  const si2Raw=si2Id?(document.getElementById(si2Id)?.value.trim()??""):"";
   const metresRaw=document.getElementById(metresId)?.value.trim()??"";
   if(parRaw===""||siRaw==="")return toast("Par and Stroke Index are required");
-  const par=Number(parRaw),si=Number(siRaw),m=metresRaw===""?null:Number(metresRaw);
+  const par=Number(parRaw),si=Number(siRaw),si2=si2Raw===""?null:Number(si2Raw),m=metresRaw===""?null:Number(metresRaw);
   if(!Number.isInteger(par)||par<2||par>7)return toast("Par must be a whole number from 2 to 7");
   if(!Number.isInteger(si)||si<1||si>18)return toast("Stroke Index must be a whole number from 1 to 18");
+  if(si2!==null&&(!Number.isInteger(si2)||si2<19||si2>36))return toast("Second Stroke Index must be a whole number from 19 to 36");
   if(m!==null&&(!Number.isInteger(m)||m<1||m>1000))return toast("Metres must be a whole number from 1 to 1000");
   if(Number(holeNumber)>=7&&Object.keys(getHoleScore(Number(holeNumber))).length){
-    if(!window.confirm(`Hole ${holeNumber} already has saved scores. Changing Par or SI will immediately recalculate Stableford points for that hole. Continue?`))return;
+    if(!window.confirm(`Hole ${holeNumber} already has saved scores. Changing Par or either Stroke Index will immediately recalculate Stableford points for that hole. Continue?`))return;
   }
   const holes=normalizeManualHoles(state.courseSettings.holes);
-  holes[Number(holeNumber)-1]={n:Number(holeNumber),par,si,m};
+  holes[Number(holeNumber)-1]={n:Number(holeNumber),par,si,si2,m};
   const next={...state.courseSettings,holes};
   if(await persistCourseSettings(next,{message:`Manual Hole ${holeNumber} saved`}))render();
 }
 async function clearManualHole(holeNumber){
   if(Object.keys(getHoleScore(Number(holeNumber))).length)return toast("Clear this hole's saved golf scores before clearing its course setup");
   if(!window.confirm(`Clear the Manual Course values for Hole ${holeNumber}?`))return;
-  const holes=normalizeManualHoles(state.courseSettings.holes);holes[Number(holeNumber)-1]={n:Number(holeNumber),par:null,si:null,m:null};
+  const holes=normalizeManualHoles(state.courseSettings.holes);holes[Number(holeNumber)-1]={n:Number(holeNumber),par:null,si:null,si2:null,m:null};
   if(await persistCourseSettings({...state.courseSettings,holes},{message:`Manual Hole ${holeNumber} cleared`}))render();
 }
 async function saveManualCourseOptions(){
@@ -640,9 +652,9 @@ function stepper(id,label,detail,value,readOnly=false,stablefordLine=""){
 function stablefordPreview(name,hole,gross){
   if(!holeSetupComplete(hole))return"Course setup required";
   if(!Number.isFinite(state.dailyHandicaps[name]))return"Daily HCP required";
-  const strokes=stablefordStrokesReceived(state.dailyHandicaps[name],hole.si);
+  const strokes=stablefordStrokesReceived(state.dailyHandicaps[name],hole.si,hole.si2);
   if(!Number.isFinite(gross)||gross<=0)return `${strokes} shot${strokes===1?"":"s"} received · points pending`;
-  const pts=stablefordPoints(gross,hole.par,state.dailyHandicaps[name],hole.si);
+  const pts=stablefordPoints(gross,hole.par,state.dailyHandicaps[name],hole.si,hole.si2);
   return `${strokes} shot${strokes===1?"":"s"} received · ${pts} Stableford pt${pts===1?"":"s"}`;
 }
 function refreshStablefordUnderScore(name,hole){
@@ -664,7 +676,7 @@ function specialCompetitionPanel(hole,readOnly=false){
 }
 function manualScoreHoleEditor(hole){
   if(!manualCourseActive())return"";
-  return `<div class="special-panel" style="border-style:dashed"><strong>${holeSetupComplete(hole)?"✎ EDIT MANUAL HOLE SETUP":"⚠ SET UP THIS MANUAL HOLE"}</strong><span>Par and Stroke Index are required before this hole can be scored. Metres are optional.</span><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px"><label><small>PAR</small><input id="scoreManualPar" inputmode="numeric" value="${manualHoleInputValue(hole.par)}" placeholder="4"></label><label><small>SI</small><input id="scoreManualSi" inputmode="numeric" value="${manualHoleInputValue(hole.si)}" placeholder="1–18"></label><label><small>METRES</small><input id="scoreManualMetres" inputmode="numeric" value="${manualHoleInputValue(hole.m)}" placeholder="optional"></label></div><button class="secondary-button compact" id="saveScoreManualHole">SAVE HOLE SETUP</button></div>`;
+  return `<div class="special-panel" style="border-style:dashed"><strong>${holeSetupComplete(hole)?"✎ EDIT MANUAL HOLE SETUP":"⚠ SET UP THIS MANUAL HOLE"}</strong><span>Par and Stroke Index are required. If the card shows a split index such as 3 / 22, enter 22 under 2ND SI. If left blank, the app uses the normal SI + 18 allocation. Metres are optional.</span><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><label><small>PAR</small><input id="scoreManualPar" inputmode="numeric" value="${manualHoleInputValue(hole.par)}" placeholder="4"></label><label><small>SI</small><input id="scoreManualSi" inputmode="numeric" value="${manualHoleInputValue(hole.si)}" placeholder="1–18"></label><label><small>2ND SI</small><input id="scoreManualSi2" inputmode="numeric" value="${manualHoleInputValue(hole.si2)}" placeholder="19–36"></label><label><small>METRES</small><input id="scoreManualMetres" inputmode="numeric" value="${manualHoleInputValue(hole.m)}" placeholder="optional"></label></div><button class="secondary-button compact" id="saveScoreManualHole">SAVE HOLE SETUP</button></div>`;
 }
 function scoreView(){
   const canEdit=Boolean(scorerPin());
@@ -677,9 +689,9 @@ function scoreView(){
     inputs=stepper("bj","Berkeley Jail","One team gross score · Ben + Joel",s.bj,!canEdit)+stepper("is","Itchy & Scratchy","One team gross score · Dylan + Brent",s.is,!canEdit);
   }else{
     inputs=Object.keys(tournament.players).map(name=>{
-      const strokes=holeSetupComplete(hole)&&Number.isFinite(state.dailyHandicaps[name])?stablefordStrokesReceived(state.dailyHandicaps[name],hole.si):null;
+      const strokes=holeSetupComplete(hole)&&Number.isFinite(state.dailyHandicaps[name])?stablefordStrokesReceived(state.dailyHandicaps[name],hole.si,hole.si2):null;
       const shotText=Number.isFinite(strokes)?`${strokes} Stableford shot${strokes===1?"":"s"}`:"shots pending";
-      const detail=Number.isFinite(state.dailyHandicaps[name])?`Daily HCP ${state.dailyHandicaps[name]} · Hole SI ${hole.si} · ${shotText}`:`Daily HCP required · Hole SI ${hole.si} · shots pending`;
+      const detail=Number.isFinite(state.dailyHandicaps[name])?`Daily HCP ${state.dailyHandicaps[name]} · Hole SI ${strokeIndexLabel(hole)} · ${shotText}`:`Daily HCP required · Hole SI ${strokeIndexLabel(hole)} · shots pending`;
       return stepper(name,name,detail,s[name],!canEdit,stablefordPreview(name,hole,s[name]));
     }).join("");
   }
@@ -703,7 +715,7 @@ function scoreView(){
     ? `<button class="primary-button" id="saveScore">SAVE HOLE ${hole.n} LIVE</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR HOLE ${hole.n} SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
     : `<button class="primary-button unlock-scorer-button" id="unlockScorer">🔒 UNLOCK SCORER MODE</button><div class="read-only-help">Only someone with the scorer PIN can save, edit or clear scores.</div>`;
   return `<div class="page-heading"><div class="eyebrow">${canEdit?"Scorer mode · unlocked":"Live scores · read only"}</div><h1>${canEdit?"Enter scores":"Scores"}</h1><p>${canEdit?"Enter gross scores. Stableford, match status and Cup points are calculated automatically.":"Follow the live scoring hole-by-hole. Unlock scorer mode only when you need to enter or correct a score."}</p></div>
-    ${modeBanner}<section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>&lt;</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${courseValue(hole.par)} · ${courseValue(hole.m," m")} · SI ${courseValue(hole.si)}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>&gt;</button></div>
+    ${modeBanner}<section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>&lt;</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${courseValue(hole.par)} · ${courseValue(hole.m," m")} · SI ${strokeIndexLabel(hole)}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>&gt;</button></div>
       <div class="format-banner"><strong>${fmt.name}</strong><span>${fmt.note}</span></div>${canEdit?manualScoreHoleEditor(hole):""}${teeNote}${hcpWarning}<div>${inputs}</div>${result}${specialCompetitionPanel(hole,!canEdit)}
       <button class="course-link-button" id="scoreHoleGuide">⛳ VIEW HOLE ${hole.n} GUIDE</button>${actions}
     </section>`;
@@ -720,7 +732,7 @@ function courseView(){
     ${manualCourseActive()?'<div class="notice"><b>Course Guide note:</b> The written caddie guide remains based on the standard Coast layout. For altered temporary holes, follow club signage and instructions on the day.</div>':""}
     <section class="card course-summary"><div><small>PAR</small><strong>${Number.isFinite(parTotal)?parTotal:"—"}</strong></div><div><small>${manualCourseActive()?"METRES ENTERED":"WHITE TEES"}</small><strong>${total?`${total}m`:"—"}</strong></div><div><small>${manualCourseActive()?"SET UP":"CURRENT"}</small><strong>${manualCourseActive()?`${configured}/18`:`Hole ${state.currentHole}`}</strong></div></section>
     <div class="section-title"><h2>Choose a hole</h2><span>Tap for full guide</span></div>
-    <div class="hole-grid">${holes.map(h=>`<button class="hole-tile ${h.n===state.currentHole?"current":""}" data-hole="${h.n}"><div><small>HOLE</small><strong>${h.n}</strong></div><span>Par ${courseValue(h.par)} · ${courseValue(h.m,"m")}</span><em>SI ${courseValue(h.si)}</em><b>${fmtForHole(h.n).short}</b>${h.n===ntpHoleNumber()?'<i>🎯 NTP</i>':""}${h.n===longestDriveHoleNumber()?'<i>🚀 LD</i>':""}</button>`).join("")}</div>`;
+    <div class="hole-grid">${holes.map(h=>`<button class="hole-tile ${h.n===state.currentHole?"current":""}" data-hole="${h.n}"><div><small>HOLE</small><strong>${h.n}</strong></div><span>Par ${courseValue(h.par)} · ${courseValue(h.m,"m")}</span><em>SI ${strokeIndexLabel(h)}</em><b>${fmtForHole(h.n).short}</b>${h.n===ntpHoleNumber()?'<i>🎯 NTP</i>':""}${h.n===longestDriveHoleNumber()?'<i>🚀 LD</i>':""}</button>`).join("")}</div>`;
 }
 function playerNotesForHole(hole){
   const me=devicePlayerId();
@@ -754,7 +766,7 @@ function holeView(){
   const h=activeHole(selectedCourseHole),g=guideFor(h.n),fmt=fmtForHole(h.n);
   const specials=[];if(h.n===ntpHoleNumber())specials.push("🎯 WRITER CUP NTP");if(h.n===longestDriveHoleNumber())specials.push("🚀 WRITER CUP LONGEST DRIVE");
   return `<div class="page-heading"><div class="eyebrow">Course Guide · Hole ${h.n}</div><h1>Hole ${h.n}</h1><p>${fmt.name}</p></div>
-    <section class="card hole-guide-hero"><div class="hole-guide-number">${h.n}</div><div class="hole-guide-stats"><span>PAR <b>${courseValue(h.par)}</b></span><span>${manualCourseActive()?"METRES":"WHITE"} <b>${courseValue(h.m,"m")}</b></span><span>INDEX <b>${courseValue(h.si)}</b></span></div>${specials.length?`<div class="special-chip">${specials.join(" · ")}</div>`:""}</section>
+    <section class="card hole-guide-hero"><div class="hole-guide-number">${h.n}</div><div class="hole-guide-stats"><span>PAR <b>${courseValue(h.par)}</b></span><span>${manualCourseActive()?"METRES":"WHITE"} <b>${courseValue(h.m,"m")}</b></span><span>INDEX <b>${strokeIndexLabel(h)}</b></span></div>${specials.length?`<div class="special-chip">${specials.join(" · ")}</div>`:""}</section>
     <div class="hole-nav"><button id="previousGuide" ${h.n===1?"disabled":""}>‹ PREV</button><button data-route="course">ALL HOLES</button><button id="nextGuide" ${h.n===18?"disabled":""}>NEXT ›</button></div>
     ${manualCourseActive()&&!holeSetupComplete(h)?'<div class="notice warning"><b>Manual hole not set up yet.</b> Enter Par and Stroke Index from the scoring screen or Course Setup before saving this hole.</div>':""}
     <section class="card guide-section"><div class="guide-label">THE COAST · STANDARD PLAYING GUIDE</div><p>${escapeHTML(g.coast_guide||"Guide loading…")}</p></section>
@@ -834,7 +846,7 @@ function scorecardView(){
     return vals.every(Number.isFinite)?`B${vals[0]} D${vals[1]} · J${vals[2]} Br${vals[3]}`:"–";
   };
   const rows=[
-    {label:"Par",get:h=>courseValue(h.par),cls:"subtle"},{label:"Metres",get:h=>courseValue(h.m),cls:"subtle"},{label:"SI",get:h=>courseValue(h.si),cls:"subtle"},
+    {label:"Par",get:h=>courseValue(h.par),cls:"subtle"},{label:"Metres",get:h=>courseValue(h.m),cls:"subtle"},{label:"SI",get:h=>strokeIndexLabel(h),cls:"subtle"},
     {label:"Ben",get:h=>getHoleScore(h.n).Ben??(h.n<=6?"Team":"–")},{label:"Joel",get:h=>getHoleScore(h.n).Joel??(h.n<=6?"Team":"–")},
     {label:"Dylan",get:h=>getHoleScore(h.n).Dylan??(h.n<=6?"Team":"–")},{label:"Brent",get:h=>getHoleScore(h.n).Brent??(h.n<=6?"Team":"–")},
     {label:"SF / Result",get:sfCell}
@@ -857,9 +869,9 @@ function manualCourseSetupView(){
   const ldOptions=Array.from({length:18},(_,i)=>`<option value="${i+1}" ${(i+1)===Number(cs.longestDriveHole)?"selected":""}>Hole ${i+1}</option>`).join("");
   return `<div class="page-heading"><div class="eyebrow">Scorer controlled</div><h1>Course Setup</h1><p>Standard Course stays preloaded. Manual Course is a universal 18-hole backup that can be completed progressively from this phone.</p></div>
     <section class="card settings-card"><strong>ACTIVE COURSE</strong><p><b>${manualCourseActive()?"Manual Course":"Standard Course · The Coast"}</b></p><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button class="secondary-button" id="activateStandardCourse" ${manualCourseActive()?"":"disabled"}>USE STANDARD</button><button class="primary-button" id="activateManualCourse" ${manualCourseActive()?"disabled":""}>USE MANUAL</button></div><small>Switching is locked once Stableford scoring has started. If Manual Course may be needed, activate it before the round and enter each hole as you reach it.</small></section>
-    <section class="card settings-card"><strong>MANUAL COURSE OPTIONS</strong><p>${configured}/18 holes currently have Par + SI entered.</p><label class="field-label">COURSE NAME · OPTIONAL<input id="manualCourseName" maxlength="80" value="${escapeHTML(cs.courseName||"")}" placeholder="e.g. The Coast · Temporary Routing"></label><label class="field-label">TEE · OPTIONAL<input id="manualCourseTee" maxlength="40" value="${escapeHTML(cs.tee||"")}" placeholder="White / Gold / Red / Blue"></label><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="field-label">🎯 NTP HOLE<select id="manualNtpHole" style="min-height:56px;font-size:1.05rem;font-weight:800;padding:0 12px">${options}</select></label><label class="field-label">🚀 LONGEST DRIVE<select id="manualLdHole" style="min-height:56px;font-size:1.05rem;font-weight:800;padding:0 12px">${ldOptions}</select></label></div><button class="secondary-button" id="saveManualCourseOptions">SAVE COURSE OPTIONS</button><small>Longest Drive's random 1–4 tee order stays attached to the Longest Drive competition wherever you move it.</small></section>
-    <div class="section-title"><h2>Manual holes</h2><span>${configured}/18 ready</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">${holes.map(x=>`<button class="secondary-button manual-hole-pick" data-manual-hole="${x.n}" style="padding:10px 6px;${x.n===selectedManualHole?"outline:2px solid var(--gold);":""}"><b>H${x.n}</b><small style="display:block">${holeSetupComplete(x)?`P${x.par} · SI${x.si}`:"Not set"}</small></button>`).join("")}</div>
-    <section class="card settings-card"><strong>HOLE ${h.n}</strong><p>${holeSetupComplete(h)?`Par ${h.par} · SI ${h.si}${Number.isFinite(h.m)?` · ${h.m}m`:""}`:"Enter Par and Stroke Index before scoring this hole."}</p><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px"><label class="field-label">PAR<input id="manualSetupPar" inputmode="numeric" value="${manualHoleInputValue(h.par)}" placeholder="4"></label><label class="field-label">SI<input id="manualSetupSi" inputmode="numeric" value="${manualHoleInputValue(h.si)}" placeholder="1–18"></label><label class="field-label">METRES<input id="manualSetupMetres" inputmode="numeric" value="${manualHoleInputValue(h.m)}" placeholder="optional"></label></div><button class="primary-button" id="saveManualSetupHole">SAVE HOLE ${h.n}</button><button class="text-button" id="clearManualSetupHole">CLEAR HOLE ${h.n} VALUES</button></section>
+    <section class="card settings-card"><strong>MANUAL COURSE OPTIONS</strong><p>${configured}/18 holes currently have Par + SI entered.</p><label class="field-label">COURSE NAME · OPTIONAL<input id="manualCourseName" maxlength="80" value="${escapeHTML(cs.courseName||"")}" placeholder="e.g. The Coast · Temporary Routing"></label><label class="field-label">TEE · OPTIONAL<input id="manualCourseTee" maxlength="40" value="${escapeHTML(cs.tee||"")}" placeholder="White / Gold / Red / Blue"></label><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="field-label">🎯 NTP HOLE<select id="manualNtpHole" style="min-height:56px;font-size:1.05rem;font-weight:800;padding:0 12px">${options}</select></label><label class="field-label">🚀 LONGEST DRIVE<select id="manualLdHole" style="min-height:56px;font-size:1.05rem;font-weight:800;padding:0 12px">${ldOptions}</select></label></div><button class="secondary-button" id="saveManualCourseOptions" style="margin-top:18px">SAVE COURSE OPTIONS</button><small>Longest Drive's random 1–4 tee order stays attached to the Longest Drive competition wherever you move it.</small></section>
+    <div class="section-title"><h2>Manual holes</h2><span>${configured}/18 ready</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">${holes.map(x=>`<button class="secondary-button manual-hole-pick" data-manual-hole="${x.n}" style="padding:10px 6px;${x.n===selectedManualHole?"outline:2px solid var(--gold);":""}"><b>H${x.n}</b><small style="display:block">${holeSetupComplete(x)?`P${x.par} · SI${strokeIndexLabel(x)}`:"Not set"}</small></button>`).join("")}</div>
+    <section class="card settings-card"><strong>HOLE ${h.n}</strong><p>${holeSetupComplete(h)?`Par ${h.par} · SI ${strokeIndexLabel(h)}${Number.isFinite(h.m)?` · ${h.m}m`:""}`:"Enter Par and Stroke Index before scoring this hole."}</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label class="field-label">PAR<input id="manualSetupPar" inputmode="numeric" value="${manualHoleInputValue(h.par)}" placeholder="4"></label><label class="field-label">SI<input id="manualSetupSi" inputmode="numeric" value="${manualHoleInputValue(h.si)}" placeholder="1–18"></label><label class="field-label">2ND SI · OPTIONAL<input id="manualSetupSi2" inputmode="numeric" value="${manualHoleInputValue(h.si2)}" placeholder="19–36"></label><label class="field-label">METRES · OPTIONAL<input id="manualSetupMetres" inputmode="numeric" value="${manualHoleInputValue(h.m)}" placeholder="optional"></label></div><small>If the scorecard shows a split index such as <b>3 / 22</b>, enter 3 as SI and 22 as 2ND SI. Leave 2ND SI blank on a normal 1–18 card.</small><button class="primary-button" id="saveManualSetupHole">SAVE HOLE ${h.n}</button><button class="text-button" id="clearManualSetupHole">CLEAR HOLE ${h.n} VALUES</button></section>
     <button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
 }
 function sponsorsView(){
@@ -1055,7 +1067,7 @@ function bindViewEvents(){
         Object.keys(tournament.players).forEach(name=>{const input=document.getElementById(name);if(input)input.oninput=()=>refreshStablefordUnderScore(name,activeHole(displayedScoreHole()));});
       }
       const draw=document.getElementById("drawOrder");if(draw)draw.onclick=drawLongestDriveOrder;
-      const manualSave=document.getElementById("saveScoreManualHole");if(manualSave)manualSave.onclick=()=>saveManualHoleFromInputs(displayedScoreHole(),{parId:"scoreManualPar",siId:"scoreManualSi",metresId:"scoreManualMetres"});
+      const manualSave=document.getElementById("saveScoreManualHole");if(manualSave)manualSave.onclick=()=>saveManualHoleFromInputs(displayedScoreHole(),{parId:"scoreManualPar",siId:"scoreManualSi",si2Id:"scoreManualSi2",metresId:"scoreManualMetres"});
       const save=document.getElementById("saveScore");if(save)save.onclick=saveScore;
       const clearScores=document.getElementById("clearHoleScores");if(clearScores)clearScores.onclick=clearHoleScores;
       const lock=document.getElementById("lockScorer");if(lock)lock.onclick=()=>{scoreBrowseHole=displayedScoreHole();clearScorerPin();toast("Scorer mode locked · read-only view");render();};
@@ -1096,7 +1108,7 @@ function bindViewEvents(){
     const manual=document.getElementById("activateManualCourse");if(manual)manual.onclick=()=>setCourseMode("manual");
     const saveOptions=document.getElementById("saveManualCourseOptions");if(saveOptions)saveOptions.onclick=saveManualCourseOptions;
     document.querySelectorAll(".manual-hole-pick").forEach(b=>b.onclick=()=>{selectedManualHole=Number(b.dataset.manualHole);localStorage.setItem("writerCupSelectedManualHole",String(selectedManualHole));render();});
-    const saveHole=document.getElementById("saveManualSetupHole");if(saveHole)saveHole.onclick=()=>saveManualHoleFromInputs(selectedManualHole,{parId:"manualSetupPar",siId:"manualSetupSi",metresId:"manualSetupMetres"});
+    const saveHole=document.getElementById("saveManualSetupHole");if(saveHole)saveHole.onclick=()=>saveManualHoleFromInputs(selectedManualHole,{parId:"manualSetupPar",siId:"manualSetupSi",si2Id:"manualSetupSi2",metresId:"manualSetupMetres"});
     const clearHole=document.getElementById("clearManualSetupHole");if(clearHole)clearHole.onclick=()=>clearManualHole(selectedManualHole);
   }
   if(route==="more"){
