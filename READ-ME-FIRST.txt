@@ -1,0 +1,34 @@
+Writer Cup V8 save-confirmation fix
+Prepared 3 September 2026
+
+Current live app was verified as V8, based on GitHub commit 165aa364eee1d1ddfa978deaa2f0461e3e14e13b. This package has NOT been deployed.
+
+What changes
+- Scoring stays on the selected hole when saving is queued or cannot be confirmed.
+- Automatic progression requires saved golf scores, all applicable NTP/LD results and a fresh read confirming their values.
+- Correction holes stay in place; Hole 18 stays in place and only confirms completion after verified saving.
+- Repeated Save taps cannot create overlapping saves.
+- The final-hole button reads SAVE HOLE 18.
+- Existing Standard second-index overrides and Manual Course support remain.
+
+Install
+1. Unzip this file.
+2. Open https://github.com/benwriter/writer-cup-2026/upload/main
+3. Upload app.js to replace the existing root-level app.js, then commit the change. Vercel should deploy it automatically.
+4. The included V8_CHANGELOG.md and test-v8-save.js can also be uploaded to the repository root. The .patch file is for code review and is not needed for uploading.
+
+No SQL or database reset is required. The North Ryde test round was not modified.
+
+Validation completed
+JavaScript syntax check, 30 existing application checks and 11 isolated save-flow tests passed. The latter include offline failures, side-comp failures, stale and failed reads, both side competitions on one Manual hole, corrections, Hole 18, second-index overrides, and 990 standard handicap allocations. Database tests use an in-memory fake.
+
+Live checks still needed after deployment
+- On the configured NTP hole, re-save the intended winner, then refresh and check that the winner remains.
+- Repeat for Longest Drive and confirm the tee order remains.
+- Because the test round is already scored through Hole 18, these saves are corrections and should stay on their selected holes.
+- Complete the agreed dry run, explicit final reset, second-device test and freeze. No reset has been performed.
+
+Checkpoint verified by read-only inspection
+Production: https://writer-cup-2026.vercel.app
+Supabase: Manual Course, North Ryde; current hole 18; 60 score rows; no saved side-competition rows at inspection.
+The NTP/LD upsert function and Standard second-index override function are present in Supabase.

@@ -56,7 +56,9 @@ let selectedCourseHole = Number(localStorage.getItem("writerCupSelectedCourseHol
 let scoreBrowseHole = null;
 let selectedManualHole = Number(localStorage.getItem("writerCupSelectedManualHole") || state.currentHole || 1);
 let realtimeChannel = null;
-let syncInFlight = false;
+let syncInFlight = null;
+let lastSyncedSideCompetitions = [];
+let scoreSaveInFlight = false;
 
 function deepMerge(base, extra) {
   for (const [k,v] of Object.entries(extra || {})) {
@@ -416,9 +418,15 @@ function mapCourseSettings(row){
   };
 }
 
-async function syncFromSupabase({quiet=false}={}){
-  if(!db||syncInFlight)return;
-  syncInFlight=true;
+async function syncFromSupabase({quiet=false,fresh=false}={}){
+  if(!db)return false;
+  if(syncInFlight){
+    const synced=await syncInFlight;
+    if(!fresh)return synced;
+    // A read started before a write cannot confirm that write. Start a new read.
+    return syncFromSupabase({quiet,fresh});
+  }
+  const request=(async()=>{
   try{
     const [tRes,hRes,sRes,cRes,pRes,gRes,nRes,csRes]=await Promise.all([
       db.from("tournaments").select("id,current_hole,status,updated_at").eq("id",CONFIG.TOURNAMENT_ID).single(),
@@ -436,6 +444,7 @@ async function syncFromSupabase({quiet=false}={}){
     state.dailyHandicaps=mapRemoteHandicaps(hRes.data);
     state.scores=mapRemoteScores(sRes.data);
     state.sideGames=mapRemoteSideGames(cRes.data);
+    lastSyncedSideCompetitions=cRes.data||[];
     state.courseSettings=mapCourseSettings(csRes.data);
     state.profiles=mapProfiles(pRes.data);
     state.courseGuide=mapGuide(gRes.data);
@@ -443,11 +452,17 @@ async function syncFromSupabase({quiet=false}={}){
     state.connection="live";state.lastSync=new Date().toISOString();saveLocalState();
     if(!quiet)toast("Live data synced");
     render();
+    return true;
   }catch(e){
     state.connection=navigator.onLine?"connecting":"offline";saveLocalState();
     if(!quiet)toast("Using offline copy");
     render();
-  }finally{syncInFlight=false;}
+    return false;
+  }
+  })();
+  syncInFlight=request;
+  try{return await request;}
+  finally{if(syncInFlight===request)syncInFlight=null;}
 }
 function subscribeRealtime(){
   if(!db||realtimeChannel)return;
@@ -762,9 +777,9 @@ function scoreView(){
     ? `<div class="score-mode-banner scorer"><strong>✎ SCORER MODE</strong><span>Scores can be entered and changed on this phone.</span></div>`
     : `<div class="score-mode-banner spectator"><strong>👀 READ-ONLY SCORE VIEW</strong><span>Live scores are visible. Scoring controls are locked.</span></div>`;
   const normalProgress=!hasSaved&&hole.n===state.currentHole;
-  const saveLabel=hasSaved?`UPDATE HOLE ${hole.n}`:normalProgress&&hole.n<18?`SAVE HOLE ${hole.n} & NEXT`:normalProgress&&hole.n===18?"SAVE HOLE 18 & FINISH":`SAVE HOLE ${hole.n}`;
+  const saveLabel=hasSaved?`UPDATE HOLE ${hole.n}`:normalProgress&&hole.n<18?`SAVE HOLE ${hole.n} & NEXT`:`SAVE HOLE ${hole.n}`;
   const actions=canEdit
-    ? `<button class="primary-button" id="saveScore">${saveLabel}</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR HOLE ${hole.n} SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
+    ? `<button class="primary-button" id="saveScore" ${scoreSaveInFlight?"disabled":""}>${scoreSaveInFlight?"SAVING…":saveLabel}</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR HOLE ${hole.n} SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
     : `<button class="primary-button unlock-scorer-button" id="unlockScorer">🔒 UNLOCK SCORER MODE</button><div class="read-only-help">Only someone with the scorer PIN can save, edit or clear scores.</div>`;
   return `<div class="page-heading"><div class="eyebrow">${canEdit?"Scorer mode · unlocked":"Live scores · read only"}</div><h1>${canEdit?"Enter scores":"Scores"}</h1><p>${canEdit?"Enter gross scores. Stableford, match status and Cup points are calculated automatically.":"Follow the live scoring hole-by-hole. Unlock scorer mode only when you need to enter or correct a score."}</p></div>
     ${modeBanner}<section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>&lt;</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${courseValue(hole.par)} · ${courseValue(hole.m," m")} · SI ${strokeIndexLabel(hole)}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>&gt;</button></div>
@@ -985,6 +1000,33 @@ function valueFrom(id){const el=document.getElementById(id);if(!el||el.value==="
 function shuffle(items){const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 
 async function saveScore(){
+  if(scoreSaveInFlight)return;
+  scoreSaveInFlight=true;
+  const button=document.getElementById("saveScore"),label=button?.textContent;
+  if(button){button.disabled=true;button.textContent="SAVING…";}
+  try{await saveScoreValues();}
+  catch(e){toast("Save could not be confirmed · stay on this hole and retry");}
+  finally{
+    scoreSaveInFlight=false;
+    const currentButton=document.getElementById("saveScore");
+    if(currentButton===button&&button){button.disabled=false;button.textContent=label;}
+    else if(route==="score")render();
+  }
+}
+
+function holeSaveMatchesRemote(h,score,sideCompetitions){
+  if(!Object.entries(score).every(([name,value])=>getHoleScore(h)[name]===value))return false;
+  return sideCompetitions.every(item=>{
+    const row=lastSyncedSideCompetitions.find(r=>r.competition_type===item.type);
+    const winnerId=item.winner&&item.winner!=="No winner"?playerIdFromName(item.winner):null;
+    const resultText=item.winner==="No winner"
+      ?(item.type==="ntp"?"No qualifying ball":"Nobody hit the fairway"):item.resultText;
+    return row&&(row.winner_player_id||null)===winnerId&&(row.result_text||"")===(resultText||"")
+      &&JSON.stringify(row.hitting_order||[])===JSON.stringify(item.hittingOrder);
+  });
+}
+
+async function saveScoreValues(){
   const h=displayedScoreHole(),hole=activeHole(h),fmt=fmtForHole(h).key,score={};
   const hadSaved=Object.keys(getHoleScore(h)).length>0,progressHoleAtStart=state.currentHole;
   const autoAdvance=!hadSaved&&h===progressHoleAtStart&&h<18;
@@ -1028,6 +1070,7 @@ async function saveScore(){
   const backendScores=fmt==="scramble"?{bj:score.bj,is:score.is}:Object.fromEntries(Object.entries(score).map(([name,v])=>[playerIdFromName(name),v]));
   const result=await rpcScorerWrite("writer_cup_save_hole",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_hole_number:h,p_scores:backendScores});
   if(!result.ok)return;
+  let savedLive=!result.offline;
 
   for(const sideCompetition of sideCompetitions){
     const winner=sideCompetition.winner;
@@ -1043,6 +1086,16 @@ async function saveScore(){
       p_result_text:resultText,p_hitting_order:sideCompetition.hittingOrder
     });
     if(!sideResult.ok)return;
+    savedLive=savedLive&&!sideResult.offline;
+  }
+
+  if(!savedLive){
+    toast(`Hole ${h} saved on this phone · live sync pending`);render();return;
+  }
+  const synced=await syncFromSupabase({quiet:true,fresh:true});
+  const overrideMatches=manualCourseActive()||h<7||(standardSecondIndexOverride(h)??null)===standardSi2Value;
+  if(!synced||!holeSaveMatchesRemote(h,score,sideCompetitions)||!overrideMatches){
+    toast(`Hole ${h} save could not be confirmed · retry before moving on`);render();return;
   }
 
   if(autoAdvance){

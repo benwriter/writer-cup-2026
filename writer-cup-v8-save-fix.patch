@@ -1,0 +1,324 @@
+diff --git a/V8_CHANGELOG.md b/V8_CHANGELOG.md
+index 51ac274..4d3ef37 100644
+--- a/V8_CHANGELOG.md
++++ b/V8_CHANGELOG.md
+@@ -8,7 +8,7 @@
+ - Save button wording now reflects the action:
+   - SAVE HOLE X & NEXT
+   - UPDATE HOLE X
+-  - SAVE HOLE 18 & FINISH
++  - SAVE HOLE 18
+ - Standard Course Holes 7–18 now have an optional 2ND SI override.
+ - Leave 2ND SI blank to keep the normal SI + 18 allocation.
+ - Enter 19–36 only when the printed card uses a different split index.
+@@ -23,3 +23,13 @@
+ - 990 fallback Stableford checks across Daily HCP 0–54 and SI 1–18 matched the previous calculation exactly.
+ - Split-index threshold check passed: SI 3 / 22 gives one shot at HCP 21 and two at HCP 22.
+ - Auto-advance correction/progression guard tests passed.
++
++## Save confirmation fixes
++
++- Offline or failed writes queued on the phone keep the scorer on the selected hole and show that live sync is pending.
++- After golf scores and all applicable side competitions save, a fresh Supabase read must match the scores, side-comp results, draw order and Standard second-index override before advancing or confirming completion.
++- A read already in progress is awaited, then a fresh read confirms the completed writes. Read failures and missing side-comp rows do not count as success.
++- Repeated Save taps cannot start overlapping hole saves.
++- No database changes or test-round resets are included.
++
++Validation: `node --check app.js`, the 30 existing checks in `node test-v6.js`, and 11 isolated save-flow tests in `node --test test-v8-save.js` pass. These tests use an in-memory database and include 990 ordinary handicap allocations plus split-index thresholds. Live NTP/LD re-save and second-device checks remain part of the dry run.
+diff --git a/app.js b/app.js
+index a0bc05d..bdc1cd0 100644
+--- a/app.js
++++ b/app.js
+@@ -56,7 +56,9 @@ let selectedCourseHole = Number(localStorage.getItem("writerCupSelectedCourseHol
+ let scoreBrowseHole = null;
+ let selectedManualHole = Number(localStorage.getItem("writerCupSelectedManualHole") || state.currentHole || 1);
+ let realtimeChannel = null;
+-let syncInFlight = false;
++let syncInFlight = null;
++let lastSyncedSideCompetitions = [];
++let scoreSaveInFlight = false;
+ 
+ function deepMerge(base, extra) {
+   for (const [k,v] of Object.entries(extra || {})) {
+@@ -416,9 +418,15 @@ function mapCourseSettings(row){
+   };
+ }
+ 
+-async function syncFromSupabase({quiet=false}={}){
+-  if(!db||syncInFlight)return;
+-  syncInFlight=true;
++async function syncFromSupabase({quiet=false,fresh=false}={}){
++  if(!db)return false;
++  if(syncInFlight){
++    const synced=await syncInFlight;
++    if(!fresh)return synced;
++    // A read started before a write cannot confirm that write. Start a new read.
++    return syncFromSupabase({quiet,fresh});
++  }
++  const request=(async()=>{
+   try{
+     const [tRes,hRes,sRes,cRes,pRes,gRes,nRes,csRes]=await Promise.all([
+       db.from("tournaments").select("id,current_hole,status,updated_at").eq("id",CONFIG.TOURNAMENT_ID).single(),
+@@ -436,6 +444,7 @@ async function syncFromSupabase({quiet=false}={}){
+     state.dailyHandicaps=mapRemoteHandicaps(hRes.data);
+     state.scores=mapRemoteScores(sRes.data);
+     state.sideGames=mapRemoteSideGames(cRes.data);
++    lastSyncedSideCompetitions=cRes.data||[];
+     state.courseSettings=mapCourseSettings(csRes.data);
+     state.profiles=mapProfiles(pRes.data);
+     state.courseGuide=mapGuide(gRes.data);
+@@ -443,11 +452,17 @@ async function syncFromSupabase({quiet=false}={}){
+     state.connection="live";state.lastSync=new Date().toISOString();saveLocalState();
+     if(!quiet)toast("Live data synced");
+     render();
++    return true;
+   }catch(e){
+     state.connection=navigator.onLine?"connecting":"offline";saveLocalState();
+     if(!quiet)toast("Using offline copy");
+     render();
+-  }finally{syncInFlight=false;}
++    return false;
++  }
++  })();
++  syncInFlight=request;
++  try{return await request;}
++  finally{if(syncInFlight===request)syncInFlight=null;}
+ }
+ function subscribeRealtime(){
+   if(!db||realtimeChannel)return;
+@@ -762,9 +777,9 @@ function scoreView(){
+     ? `<div class="score-mode-banner scorer"><strong>✎ SCORER MODE</strong><span>Scores can be entered and changed on this phone.</span></div>`
+     : `<div class="score-mode-banner spectator"><strong>👀 READ-ONLY SCORE VIEW</strong><span>Live scores are visible. Scoring controls are locked.</span></div>`;
+   const normalProgress=!hasSaved&&hole.n===state.currentHole;
+-  const saveLabel=hasSaved?`UPDATE HOLE ${hole.n}`:normalProgress&&hole.n<18?`SAVE HOLE ${hole.n} & NEXT`:normalProgress&&hole.n===18?"SAVE HOLE 18 & FINISH":`SAVE HOLE ${hole.n}`;
++  const saveLabel=hasSaved?`UPDATE HOLE ${hole.n}`:normalProgress&&hole.n<18?`SAVE HOLE ${hole.n} & NEXT`:`SAVE HOLE ${hole.n}`;
+   const actions=canEdit
+-    ? `<button class="primary-button" id="saveScore">${saveLabel}</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR HOLE ${hole.n} SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
++    ? `<button class="primary-button" id="saveScore" ${scoreSaveInFlight?"disabled":""}>${scoreSaveInFlight?"SAVING…":saveLabel}</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR HOLE ${hole.n} SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
+     : `<button class="primary-button unlock-scorer-button" id="unlockScorer">🔒 UNLOCK SCORER MODE</button><div class="read-only-help">Only someone with the scorer PIN can save, edit or clear scores.</div>`;
+   return `<div class="page-heading"><div class="eyebrow">${canEdit?"Scorer mode · unlocked":"Live scores · read only"}</div><h1>${canEdit?"Enter scores":"Scores"}</h1><p>${canEdit?"Enter gross scores. Stableford, match status and Cup points are calculated automatically.":"Follow the live scoring hole-by-hole. Unlock scorer mode only when you need to enter or correct a score."}</p></div>
+     ${modeBanner}<section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>&lt;</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${courseValue(hole.par)} · ${courseValue(hole.m," m")} · SI ${strokeIndexLabel(hole)}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>&gt;</button></div>
+@@ -985,6 +1000,33 @@ function valueFrom(id){const el=document.getElementById(id);if(!el||el.value==="
+ function shuffle(items){const a=[...items];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+ 
+ async function saveScore(){
++  if(scoreSaveInFlight)return;
++  scoreSaveInFlight=true;
++  const button=document.getElementById("saveScore"),label=button?.textContent;
++  if(button){button.disabled=true;button.textContent="SAVING…";}
++  try{await saveScoreValues();}
++  catch(e){toast("Save could not be confirmed · stay on this hole and retry");}
++  finally{
++    scoreSaveInFlight=false;
++    const currentButton=document.getElementById("saveScore");
++    if(currentButton===button&&button){button.disabled=false;button.textContent=label;}
++    else if(route==="score")render();
++  }
++}
++
++function holeSaveMatchesRemote(h,score,sideCompetitions){
++  if(!Object.entries(score).every(([name,value])=>getHoleScore(h)[name]===value))return false;
++  return sideCompetitions.every(item=>{
++    const row=lastSyncedSideCompetitions.find(r=>r.competition_type===item.type);
++    const winnerId=item.winner&&item.winner!=="No winner"?playerIdFromName(item.winner):null;
++    const resultText=item.winner==="No winner"
++      ?(item.type==="ntp"?"No qualifying ball":"Nobody hit the fairway"):item.resultText;
++    return row&&(row.winner_player_id||null)===winnerId&&(row.result_text||"")===(resultText||"")
++      &&JSON.stringify(row.hitting_order||[])===JSON.stringify(item.hittingOrder);
++  });
++}
++
++async function saveScoreValues(){
+   const h=displayedScoreHole(),hole=activeHole(h),fmt=fmtForHole(h).key,score={};
+   const hadSaved=Object.keys(getHoleScore(h)).length>0,progressHoleAtStart=state.currentHole;
+   const autoAdvance=!hadSaved&&h===progressHoleAtStart&&h<18;
+@@ -1028,6 +1070,7 @@ async function saveScore(){
+   const backendScores=fmt==="scramble"?{bj:score.bj,is:score.is}:Object.fromEntries(Object.entries(score).map(([name,v])=>[playerIdFromName(name),v]));
+   const result=await rpcScorerWrite("writer_cup_save_hole",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_hole_number:h,p_scores:backendScores});
+   if(!result.ok)return;
++  let savedLive=!result.offline;
+ 
+   for(const sideCompetition of sideCompetitions){
+     const winner=sideCompetition.winner;
+@@ -1043,6 +1086,16 @@ async function saveScore(){
+       p_result_text:resultText,p_hitting_order:sideCompetition.hittingOrder
+     });
+     if(!sideResult.ok)return;
++    savedLive=savedLive&&!sideResult.offline;
++  }
++
++  if(!savedLive){
++    toast(`Hole ${h} saved on this phone · live sync pending`);render();return;
++  }
++  const synced=await syncFromSupabase({quiet:true,fresh:true});
++  const overrideMatches=manualCourseActive()||h<7||(standardSecondIndexOverride(h)??null)===standardSi2Value;
++  if(!synced||!holeSaveMatchesRemote(h,score,sideCompetitions)||!overrideMatches){
++    toast(`Hole ${h} save could not be confirmed · retry before moving on`);render();return;
+   }
+ 
+   if(autoAdvance){
+diff --git a/test-v8-save.js b/test-v8-save.js
+new file mode 100644
+index 0000000..f26d51f
+--- /dev/null
++++ b/test-v8-save.js
+@@ -0,0 +1,159 @@
++// Run with node --test test-v8-save.js. All database calls use an in-memory fake.
++const {test}=require('node:test');
++const assert=require('node:assert/strict');
++const fs=require('node:fs');
++const vm=require('node:vm');
++const source=fs.readFileSync(__dirname+'/app.js','utf8').split('document.querySelectorAll(".nav-item").forEach(el=>el.onclick')[0];
++const data=fs.readFileSync(__dirname+'/data.js','utf8');
++const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{promise,resolve};};
++
++function fixture({hole=7,progress=hole,saved=false,manual=false,sideHole=4,failRpc,failRead,sideNoOp=false,sideGate,readGate,beforeRead}={}){
++  const storage={},messages=[],calls=[];
++  let reads=0;
++  const remote={
++    tournaments:{id:'writer-cup-2026',current_hole:progress,status:'live'},
++    daily_handicaps:['ben','joel','dylan','brent'].map(player_id=>({player_id,daily_handicap:22})),
++    scores:[],side_competitions:[],players:[],course_guide:[],player_notes:[],
++    course_settings:{active_mode:manual?'manual':'standard',manual_course_name:'Test course',manual_tee:'White',
++      manual_holes:Array.from({length:18},(_,i)=>({n:i+1,par:4,si:i+1,si2:null,m:300})),
++      standard_si2_overrides:{},ntp_hole:sideHole,longest_drive_hole:manual?sideHole:14}
++  };
++  function setScores(h,scores){
++    remote.scores=remote.scores.filter(row=>row.hole_number!==h);
++    for(const [id,gross_score] of Object.entries(scores))remote.scores.push({hole_number:h,
++      competitor_type:h<=6?'team':'player',competitor_id:id==='bj'?'berkeley-jail':id==='is'?'itchy-scratchy':id,gross_score});
++  }
++  if(saved)setScores(hole,hole<=6?{bj:5,is:5}:{ben:5,joel:5,dylan:5,brent:5});
++  const db={
++    from(table){
++      if(table==='tournaments'){reads++;beforeRead?.(reads,remote);}
++      const pass=reads,snapshot=structuredClone(remote[table]);
++      const result={data:snapshot,error:failRead?.(pass)?{message:'Read unavailable'}:null};
++      const promise=readGate&&pass===1?readGate.promise.then(()=>result):Promise.resolve(result);
++      const query={select:()=>query,eq:()=>query,single:()=>promise,maybeSingle:()=>promise,
++        then:(resolve,reject)=>promise.then(resolve,reject)};
++      return query;
++    },
++    async rpc(name,args){
++      calls.push({name,args:structuredClone(args)});
++      if(failRpc===name)return{error:{message:'Connection failed'}};
++      if(name==='writer_cup_save_standard_si2_override'){
++        if(args.p_second_stroke_index===null)delete remote.course_settings.standard_si2_overrides[args.p_hole_number];
++        else remote.course_settings.standard_si2_overrides[args.p_hole_number]=args.p_second_stroke_index;
++      }
++      if(name==='writer_cup_save_hole'){
++        setScores(args.p_hole_number,args.p_scores);
++        remote.tournaments.current_hole=Math.max(progress,Math.min(18,args.p_hole_number+1));
++      }
++      if(name==='writer_cup_save_side_competition'){
++        if(sideGate)await sideGate.promise;
++        if(!sideNoOp){
++          remote.side_competitions=remote.side_competitions.filter(row=>row.competition_type!==args.p_competition_type);
++          remote.side_competitions.push({competition_type:args.p_competition_type,winner_player_id:args.p_winner_player_id,
++            result_text:args.p_result_text,hitting_order:args.p_hitting_order});
++        }
++      }
++      return{error:null};
++    }
++  };
++  const inputs=Object.fromEntries(Object.entries({Ben:'5',Joel:'5',Dylan:'5',Brent:'5',bj:'4',is:'5',
++    standardSi2Override:'',ntpWinnerSelect:'Ben',ntpDistanceInput:'2m',longestWinnerSelect:'Joel'}).map(([k,value])=>[k,{value}]));
++  const ctx={console,structuredClone,Date,Math,Object,Array,Number,String,JSON,
++    localStorage:{getItem:k=>storage[k]??null,setItem:(k,v)=>storage[k]=String(v),removeItem:k=>delete storage[k]},
++    sessionStorage:{getItem:k=>storage['s:'+k]??null,setItem:(k,v)=>storage['s:'+k]=String(v),removeItem:k=>delete storage['s:'+k]},
++    document:{getElementById:id=>inputs[id]||null},navigator:{onLine:true},
++    window:{supabase:{createClient:()=>db},WRITER_CUP_CONFIG:{SUPABASE_URL:'',SUPABASE_PUBLISHABLE_KEY:'',TOURNAMENT_ID:'writer-cup-2026'},scrollTo:()=>{}},
++    setTimeout:()=>0,clearTimeout:()=>{},messages};
++  vm.createContext(ctx);vm.runInContext(data,ctx);vm.runInContext(source,ctx);
++  const run=code=>vm.runInContext(code,ctx);
++  ctx.remote=remote;
++  run(`render=()=>{};toast=message=>messages.push(message);setScorerPin('1234');
++    state.currentHole=${progress};scoreBrowseHole=${hole};
++    state.scores=mapRemoteScores(remote.scores);state.dailyHandicaps=mapRemoteHandicaps(remote.daily_handicaps);
++    state.courseSettings=mapCourseSettings(remote.course_settings);state.sideGames.driveOrder=['Ben','Joel','Dylan','Brent'];`);
++  return{run,inputs,remote,messages,calls,ctx,get reads(){return reads;},save:()=>run('saveScore()'),shown:()=>run('displayedScoreHole()')};
++}
++
++test('normal scoring advances and correction saves stay on the selected hole',async()=>{
++  const normal=fixture();await normal.save();assert.equal(normal.shown(),8);
++  for(const saved of [false,true]){
++    const correction=fixture({hole:8,progress:12,saved});await correction.save();assert.equal(correction.shown(),8);
++  }
++});
++
++test('hole 18 stays in place and only confirms completion after a live save',async()=>{
++  const f=fixture({hole:18});await f.save();assert.equal(f.shown(),18);assert.match(f.messages.at(-1),/round scoring complete/);
++  const offline=fixture({hole:18});offline.ctx.navigator.onLine=false;await offline.save();
++  assert.equal(offline.shown(),18);assert.doesNotMatch(offline.messages.at(-1),/complete/);
++});
++
++test('offline and failed golf saves stay put and retain pending writes',async()=>{
++  for(const failRpc of [undefined,'writer_cup_save_hole']){
++    const f=fixture({failRpc});if(!failRpc)f.ctx.navigator.onLine=false;
++    await f.save();assert.equal(f.shown(),7);assert.equal(f.run('pendingWrites().length'),1);
++    assert.match(f.messages.at(-1),/sync pending/);
++  }
++});
++
++test('side-comp failure does not advance or lose the captured selection',async()=>{
++  const f=fixture({hole:4,failRpc:'writer_cup_save_side_competition'});await f.save();
++  assert.equal(f.shown(),4);assert.equal(f.run('pendingWrites()[0].args.p_winner_player_id'),'ben');
++});
++
++test('NTP and LD on the same Manual hole must both save before advancing',async()=>{
++  const gate=deferred(),f=fixture({hole:7,manual:true,sideHole:7,sideGate:gate});
++  const saving=f.save();
++  await new Promise(setImmediate);
++  assert.equal(f.shown(),7);assert.equal(f.calls.length,2);
++  await f.save();assert.equal(f.calls.length,2,'second click must not duplicate the save');
++  gate.resolve();await saving;
++  assert.equal(f.shown(),8);assert.equal(f.remote.side_competitions.length,2);
++  assert.deepEqual(f.calls.map(c=>c.name),['writer_cup_save_hole','writer_cup_save_side_competition','writer_cup_save_side_competition']);
++});
++
++test('missing side-comp row and changed remote score fail verification',async()=>{
++  const missing=fixture({hole:4,sideNoOp:true});await missing.save();assert.equal(missing.shown(),4);
++  assert.match(missing.messages.at(-1),/could not be confirmed/);
++  const changed=fixture({beforeRead:(pass,remote)=>{if(pass===2)remote.scores[0].gross_score=6;}});
++  await changed.save();assert.equal(changed.shown(),7);
++  assert.match(changed.messages.at(-1),/could not be confirmed/);
++});
++
++test('a failed confirmation read cannot advance',async()=>{
++  const f=fixture({failRead:pass=>pass>=2});await f.save();
++  assert.equal(f.shown(),7);assert.match(f.messages.at(-1),/could not be confirmed/);
++});
++
++test('confirmation waits for an existing stale read, then reads again',async()=>{
++  const gate=deferred(),f=fixture({readGate:gate});
++  const earlier=f.run('syncFromSupabase({quiet:true})');
++  const saving=f.save();await new Promise(setImmediate);
++  assert.equal(f.shown(),7);assert.equal(f.reads,1);
++  gate.resolve();await earlier;await saving;
++  assert.equal(f.reads,2);assert.equal(f.shown(),8);
++});
++
++test('no-winner NTP and LD results verify using their saved values',async()=>{
++  const f=fixture({manual:true,sideHole:7});
++  f.inputs.ntpWinnerSelect.value='No winner';f.inputs.longestWinnerSelect.value='No winner';
++  await f.save();assert.equal(f.shown(),8);
++  assert.equal(f.remote.side_competitions[0].result_text,'No qualifying ball');
++  assert.equal(f.remote.side_competitions[1].result_text,'Nobody hit the fairway');
++});
++
++test('Standard second-index override saves before scores and survives confirmation',async()=>{
++  const f=fixture();f.inputs.standardSi2Override.value='22';await f.save();
++  assert.equal(f.shown(),8);assert.equal(f.remote.course_settings.standard_si2_overrides[7],22);
++  assert.equal(f.calls[0].name,'writer_cup_save_standard_si2_override');
++  f.run('scoreBrowseHole=7');f.inputs.standardSi2Override.value='';await f.save();
++  assert.equal(f.shown(),7);assert.equal(f.remote.course_settings.standard_si2_overrides[7],undefined);
++});
++
++test('split-index thresholds and all ordinary HCP 0–54 allocations still match',()=>{
++  const f=fixture();
++  for(const [hcp,shots] of [[2,0],[3,1],[21,1],[22,2]])assert.equal(f.run(`stablefordStrokesReceived(${hcp},3,22)`),shots);
++  for(let hcp=0;hcp<=54;hcp++)for(let si=1;si<=18;si++){
++    const expected=Math.floor(hcp/18)+(hcp%18>=si?1:0);
++    assert.equal(f.run(`stablefordStrokesReceived(${hcp},${si},null)`),expected);
++  }
++});

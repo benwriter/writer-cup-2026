@@ -8,7 +8,7 @@
 - Save button wording now reflects the action:
   - SAVE HOLE X & NEXT
   - UPDATE HOLE X
-  - SAVE HOLE 18 & FINISH
+  - SAVE HOLE 18
 - Standard Course Holes 7–18 now have an optional 2ND SI override.
 - Leave 2ND SI blank to keep the normal SI + 18 allocation.
 - Enter 19–36 only when the printed card uses a different split index.
@@ -23,3 +23,13 @@
 - 990 fallback Stableford checks across Daily HCP 0–54 and SI 1–18 matched the previous calculation exactly.
 - Split-index threshold check passed: SI 3 / 22 gives one shot at HCP 21 and two at HCP 22.
 - Auto-advance correction/progression guard tests passed.
+
+## Save confirmation fixes
+
+- Offline or failed writes queued on the phone keep the scorer on the selected hole and show that live sync is pending.
+- After golf scores and all applicable side competitions save, a fresh Supabase read must match the scores, side-comp results, draw order and Standard second-index override before advancing or confirming completion.
+- A read already in progress is awaited, then a fresh read confirms the completed writes. Read failures and missing side-comp rows do not count as success.
+- Repeated Save taps cannot start overlapping hole saves.
+- No database changes or test-round resets are included.
+
+Validation: `node --check app.js`, the 30 existing checks in `node test-v6.js`, and 11 isolated save-flow tests in `node --test test-v8-save.js` pass. These tests use an in-memory database and include 990 ordinary handicap allocations plus split-index thresholds. Live NTP/LD re-save and second-device checks remain part of the dry run.
