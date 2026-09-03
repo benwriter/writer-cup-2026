@@ -1,5 +1,5 @@
-// WRITER CUP V7.2 · SPLIT STROKE INDEX + COURSE SETUP POLISH · 2026-09-03
-// V7.2 supports optional 19–36 second Stroke Index values for exact split-index Stableford allocation.
+// WRITER CUP V8 · SMART SCORING FLOW + STANDARD SPLIT INDEX OVERRIDES · 2026-09-03
+// V8 auto-advances normal scoring, keeps corrections in place, and supports optional Standard Course 2ND SI overrides.
 
 const CONFIG = window.WRITER_CUP_CONFIG;
 const DATA = window.WRITER_CUP_DATA;
@@ -25,13 +25,22 @@ function normalizeManualHoles(items){
     return {n,par:numberOrNull(h.par),si:numberOrNull(h.si),si2:numberOrNull(h.si2),m:numberOrNull(h.m)};
   });
 }
+function normalizeStandardSi2Overrides(value){
+  const out={};
+  if(!value||typeof value!=="object"||Array.isArray(value))return out;
+  for(const [key,raw] of Object.entries(value)){
+    const hole=Number(key),si2=numberOrNull(raw);
+    if(Number.isInteger(hole)&&hole>=7&&hole<=18&&Number.isInteger(si2)&&si2>=19&&si2<=36)out[hole]=si2;
+  }
+  return out;
+}
 
 const initialState = {
   currentHole: 1,
   scores: {},
   dailyHandicaps: { Ben:null, Joel:null, Dylan:null, Brent:null },
   sideGames: { ntpWinner:"", ntpDistance:"", longestWinner:"", driveOrder:[] },
-  courseSettings: { activeMode:"standard", courseName:"", tee:"", holes:blankManualHoles(), ntpHole:4, longestDriveHole:14 },
+  courseSettings: { activeMode:"standard", courseName:"", tee:"", holes:blankManualHoles(), standardSi2Overrides:{}, ntpHole:4, longestDriveHole:14 },
   profiles: {},
   courseGuide: {},
   notes: {},
@@ -117,9 +126,15 @@ function manualCourseActive(){return state.courseSettings?.activeMode==="manual"
 function manualHoleData(hole){
   return normalizeManualHoles(state.courseSettings?.holes)[Math.max(1,Math.min(18,Number(hole)))-1];
 }
+function standardSecondIndexOverride(hole){
+  const n=Math.max(1,Math.min(18,Number(hole)));
+  return numberOrNull(normalizeStandardSi2Overrides(state.courseSettings?.standardSi2Overrides)[n]);
+}
 function activeHole(hole){
   const n=Math.max(1,Math.min(18,Number(hole)));
-  return manualCourseActive()?manualHoleData(n):tournament.holes[n-1];
+  if(manualCourseActive())return manualHoleData(n);
+  const base=tournament.holes[n-1],si2=standardSecondIndexOverride(n);
+  return {...base,si2:Number.isFinite(si2)?si2:null};
 }
 function activeHoles(){return Array.from({length:18},(_,i)=>activeHole(i+1));}
 function holeSetupComplete(hole){return Number.isFinite(hole?.par)&&Number.isFinite(hole?.si);}
@@ -389,12 +404,13 @@ function mapNotes(rows){
   return out;
 }
 function mapCourseSettings(row){
-  if(!row)return{activeMode:"standard",courseName:"",tee:"",holes:blankManualHoles(),ntpHole:4,longestDriveHole:14};
+  if(!row)return{activeMode:"standard",courseName:"",tee:"",holes:blankManualHoles(),standardSi2Overrides:{},ntpHole:4,longestDriveHole:14};
   return {
     activeMode:row.active_mode==="manual"?"manual":"standard",
     courseName:row.manual_course_name||"",
     tee:row.manual_tee||"",
     holes:normalizeManualHoles(row.manual_holes),
+    standardSi2Overrides:normalizeStandardSi2Overrides(row.standard_si2_overrides),
     ntpHole:Number(row.ntp_hole||4),
     longestDriveHole:Number(row.longest_drive_hole||14)
   };
@@ -412,7 +428,7 @@ async function syncFromSupabase({quiet=false}={}){
       db.from("players").select("id,team_id,display_name,initials,profile_title,bio,photo_url,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID),
       db.from("course_guide").select("hole_number,coast_guide,writer_cup_plan,danger_note,local_rule_note,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID),
       db.from("player_notes").select("player_id,note_key,hole_number,note_text,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID),
-      db.from("course_settings").select("active_mode,manual_course_name,manual_tee,manual_holes,ntp_hole,longest_drive_hole,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID).maybeSingle()
+      db.from("course_settings").select("active_mode,manual_course_name,manual_tee,manual_holes,standard_si2_overrides,ntp_hole,longest_drive_hole,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID).maybeSingle()
     ]);
     const err=tRes.error||hRes.error||sRes.error||cRes.error||pRes.error||gRes.error||nRes.error||csRes.error;
     if(err)throw err;
@@ -470,6 +486,7 @@ async function persistCourseSettings(nextSettings,{message="Course setup saved"}
     courseName:String(nextSettings.courseName||"").trim(),
     tee:String(nextSettings.tee||"").trim(),
     holes:normalizeManualHoles(nextSettings.holes),
+    standardSi2Overrides:normalizeStandardSi2Overrides(nextSettings.standardSi2Overrides??state.courseSettings?.standardSi2Overrides),
     ntpHole:Math.max(1,Math.min(18,Number(nextSettings.ntpHole||4))),
     longestDriveHole:Math.max(1,Math.min(18,Number(nextSettings.longestDriveHole||14)))
   };
@@ -487,6 +504,25 @@ async function persistCourseSettings(nextSettings,{message="Course setup saved"}
   await syncFromSupabase({quiet:true});
   toast(message);return true;
 }
+async function persistStandardSi2Override(hole,secondIndex){
+  const pin=requireScorerPin();if(!pin)return false;
+  if(!navigator.onLine||!db){toast("Connect to the internet to change a Standard Course 2ND SI");return false;}
+  const n=Number(hole),si2=secondIndex===null?null:Number(secondIndex);
+  if(!Number.isInteger(n)||n<7||n>18){toast("2ND SI overrides are only used on Holes 7–18");return false;}
+  if(si2!==null&&(!Number.isInteger(si2)||si2<19||si2>36)){toast("Second Stroke Index must be a whole number from 19 to 36");return false;}
+  const {error}=await db.rpc("writer_cup_save_standard_si2_override",{
+    p_tournament_id:CONFIG.TOURNAMENT_ID,p_pin:pin,p_hole_number:n,p_second_stroke_index:si2
+  });
+  if(error){
+    if((error.message||"").toLowerCase().includes("invalid scorer pin")){clearScorerPin();toast("Incorrect scorer PIN");return false;}
+    toast(error.message||"2ND SI could not be saved");return false;
+  }
+  const overrides=normalizeStandardSi2Overrides(state.courseSettings?.standardSi2Overrides);
+  if(si2===null)delete overrides[n];else overrides[n]=si2;
+  state.courseSettings={...state.courseSettings,standardSi2Overrides:overrides};saveLocalState();
+  return true;
+}
+
 async function setCourseMode(mode){
   mode=mode==="manual"?"manual":"standard";
   if(mode===state.courseSettings.activeMode)return toast(`${mode==="manual"?"Manual":"Standard"} Course is already active`);
@@ -678,6 +714,20 @@ function manualScoreHoleEditor(hole){
   if(!manualCourseActive())return"";
   return `<div class="special-panel" style="border-style:dashed"><strong>${holeSetupComplete(hole)?"✎ EDIT MANUAL HOLE SETUP":"⚠ SET UP THIS MANUAL HOLE"}</strong><span>Par and Stroke Index are required. If the card shows a split index such as 3 / 22, enter 22 under 2ND SI. If left blank, the app uses the normal SI + 18 allocation. Metres are optional.</span><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px"><label><small>PAR</small><input id="scoreManualPar" inputmode="numeric" value="${manualHoleInputValue(hole.par)}" placeholder="4"></label><label><small>SI</small><input id="scoreManualSi" inputmode="numeric" value="${manualHoleInputValue(hole.si)}" placeholder="1–18"></label><label><small>2ND SI</small><input id="scoreManualSi2" inputmode="numeric" value="${manualHoleInputValue(hole.si2)}" placeholder="19–36"></label><label><small>METRES</small><input id="scoreManualMetres" inputmode="numeric" value="${manualHoleInputValue(hole.m)}" placeholder="optional"></label></div><button class="secondary-button compact" id="saveScoreManualHole">SAVE HOLE SETUP</button></div>`;
 }
+function standardSecondIndexEditor(hole){
+  if(manualCourseActive()||hole.n<7)return"";
+  const stored=standardSecondIndexOverride(hole.n),assumed=Number(hole.si)+18;
+  return `<div class="special-panel" style="border-style:dashed"><strong>2ND SI · OPTIONAL OVERRIDE</strong><span>Standard Course assumes <b>${hole.si} / ${assumed}</b>. If today's printed card shows a different second index, enter it here. Leave blank to use ${assumed}. The override saves with this hole.</span><label style="display:block;margin-top:8px"><small>2ND SI · 19–36</small><input id="standardSi2Override" inputmode="numeric" value="${Number.isFinite(stored)?stored:""}" placeholder="${assumed} · default"></label></div>`;
+}
+function scorePreviewHole(){
+  const hole=activeHole(displayedScoreHole()),input=document.getElementById("standardSi2Override");
+  if(!input)return hole;
+  const raw=input.value.trim();
+  if(raw==="")return {...hole,si2:null};
+  const si2=Number(raw);
+  return Number.isInteger(si2)&&si2>=19&&si2<=36?{...hole,si2}:hole;
+}
+
 function scoreView(){
   const canEdit=Boolean(scorerPin());
   const holeNumber=displayedScoreHole();
@@ -711,12 +761,14 @@ function scoreView(){
   const modeBanner=canEdit
     ? `<div class="score-mode-banner scorer"><strong>✎ SCORER MODE</strong><span>Scores can be entered and changed on this phone.</span></div>`
     : `<div class="score-mode-banner spectator"><strong>👀 READ-ONLY SCORE VIEW</strong><span>Live scores are visible. Scoring controls are locked.</span></div>`;
+  const normalProgress=!hasSaved&&hole.n===state.currentHole;
+  const saveLabel=hasSaved?`UPDATE HOLE ${hole.n}`:normalProgress&&hole.n<18?`SAVE HOLE ${hole.n} & NEXT`:normalProgress&&hole.n===18?"SAVE HOLE 18 & FINISH":`SAVE HOLE ${hole.n}`;
   const actions=canEdit
-    ? `<button class="primary-button" id="saveScore">SAVE HOLE ${hole.n} LIVE</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR HOLE ${hole.n} SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
+    ? `<button class="primary-button" id="saveScore">${saveLabel}</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR HOLE ${hole.n} SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
     : `<button class="primary-button unlock-scorer-button" id="unlockScorer">🔒 UNLOCK SCORER MODE</button><div class="read-only-help">Only someone with the scorer PIN can save, edit or clear scores.</div>`;
   return `<div class="page-heading"><div class="eyebrow">${canEdit?"Scorer mode · unlocked":"Live scores · read only"}</div><h1>${canEdit?"Enter scores":"Scores"}</h1><p>${canEdit?"Enter gross scores. Stableford, match status and Cup points are calculated automatically.":"Follow the live scoring hole-by-hole. Unlock scorer mode only when you need to enter or correct a score."}</p></div>
     ${modeBanner}<section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>&lt;</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${courseValue(hole.par)} · ${courseValue(hole.m," m")} · SI ${strokeIndexLabel(hole)}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>&gt;</button></div>
-      <div class="format-banner"><strong>${fmt.name}</strong><span>${fmt.note}</span></div>${canEdit?manualScoreHoleEditor(hole):""}${teeNote}${hcpWarning}<div>${inputs}</div>${result}${specialCompetitionPanel(hole,!canEdit)}
+      <div class="format-banner"><strong>${fmt.name}</strong><span>${fmt.note}</span></div>${canEdit?`${manualScoreHoleEditor(hole)}${standardSecondIndexEditor(hole)}`:""}${teeNote}${hcpWarning}<div>${inputs}</div>${result}${specialCompetitionPanel(hole,!canEdit)}
       <button class="course-link-button" id="scoreHoleGuide">⛳ VIEW HOLE ${hole.n} GUIDE</button>${actions}
     </section>`;
 }
@@ -934,7 +986,19 @@ function shuffle(items){const a=[...items];for(let i=a.length-1;i>0;i--){const j
 
 async function saveScore(){
   const h=displayedScoreHole(),hole=activeHole(h),fmt=fmtForHole(h).key,score={};
+  const hadSaved=Object.keys(getHoleScore(h)).length>0,progressHoleAtStart=state.currentHole;
+  const autoAdvance=!hadSaved&&h===progressHoleAtStart&&h<18;
   if(manualCourseActive()&&!holeSetupComplete(hole))return toast(`Enter Par and Stroke Index for Manual Hole ${h} first`);
+
+  let standardSi2Value=null,standardSi2Changed=false;
+  if(!manualCourseActive()&&h>=7){
+    const raw=document.getElementById("standardSi2Override")?.value.trim()??"";
+    standardSi2Value=raw===""?null:Number(raw);
+    if(standardSi2Value!==null&&(!Number.isInteger(standardSi2Value)||standardSi2Value<19||standardSi2Value>36))return toast("Second Stroke Index must be a whole number from 19 to 36");
+    const stored=standardSecondIndexOverride(h);
+    standardSi2Changed=(Number.isFinite(stored)?stored:null)!==standardSi2Value;
+  }
+
   if(fmt==="scramble"){
     score.bj=valueFrom("bj");score.is=valueFrom("is");
     if(!score.bj||!score.is)return toast("Enter both team scores");
@@ -944,8 +1008,7 @@ async function saveScore(){
     if(Object.values(score).some(v=>!v))return toast("Enter all four gross scores");
   }
 
-  // Capture any side-competition fields before the hole save because a successful
-  // live write syncs and re-renders the page. NTP and LD can now live on any hole.
+  // Capture every field before the first live write because successful RPCs sync and re-render.
   const sideCompetitions=[];
   if(h===ntpHoleNumber())sideCompetitions.push({
     type:"ntp",winner:document.getElementById("ntpWinnerSelect")?.value??state.sideGames.ntpWinner,
@@ -955,6 +1018,11 @@ async function saveScore(){
     type:"longest_drive",winner:document.getElementById("longestWinnerSelect")?.value??state.sideGames.longestWinner,
     resultText:"",hittingOrder:[...state.sideGames.driveOrder]
   });
+
+  if(standardSi2Changed){
+    const savedOverride=await persistStandardSi2Override(h,standardSi2Value);
+    if(!savedOverride)return;
+  }
 
   state.scores[h]=score;saveLocalState();
   const backendScores=fmt==="scramble"?{bj:score.bj,is:score.is}:Object.fromEntries(Object.entries(score).map(([name,v])=>[playerIdFromName(name),v]));
@@ -977,7 +1045,12 @@ async function saveScore(){
     if(!sideResult.ok)return;
   }
 
-  scoreBrowseHole=h;saveLocalState();toast(`Hole ${h} saved live · use > when ready for the next hole`);render();
+  if(autoAdvance){
+    scoreBrowseHole=h+1;saveLocalState();toast(`Hole ${h} saved · Hole ${h+1} ready`);render();window.scrollTo({top:0,behavior:"smooth"});return;
+  }
+  scoreBrowseHole=h;saveLocalState();
+  toast(h===18&&!hadSaved&&progressHoleAtStart===18?"Hole 18 saved · round scoring complete":hadSaved?`Hole ${h} updated live`:`Hole ${h} saved live`);
+  render();
 }
 async function clearHoleScores(){
   const h=displayedScoreHole();
@@ -1059,12 +1132,14 @@ function bindViewEvents(){
     document.getElementById("nextHole").onclick=()=>{scoreBrowseHole=Math.min(18,shownHole()+1);render();};
     if(canEdit){
       document.querySelectorAll("[data-step]").forEach(btn=>btn.onclick=()=>{
-        const input=document.getElementById(btn.dataset.step),hole=activeHole(displayedScoreHole()),parsed=Number(input.value),current=Number.isFinite(parsed)?parsed:0;
+        const input=document.getElementById(btn.dataset.step),hole=scorePreviewHole(),parsed=Number(input.value),current=Number.isFinite(parsed)?parsed:0;
         input.value=Math.max(0,Math.min(20,current+Number(btn.dataset.delta)));
         if(hole.n>=7)refreshStablefordUnderScore(btn.dataset.step,hole);
       });
       if(displayedScoreHole()>=7){
-        Object.keys(tournament.players).forEach(name=>{const input=document.getElementById(name);if(input)input.oninput=()=>refreshStablefordUnderScore(name,activeHole(displayedScoreHole()));});
+        Object.keys(tournament.players).forEach(name=>{const input=document.getElementById(name);if(input)input.oninput=()=>refreshStablefordUnderScore(name,scorePreviewHole());});
+        const standardSi2=document.getElementById("standardSi2Override");
+        if(standardSi2)standardSi2.oninput=()=>{const preview=scorePreviewHole();Object.keys(tournament.players).forEach(name=>refreshStablefordUnderScore(name,preview));};
       }
       const draw=document.getElementById("drawOrder");if(draw)draw.onclick=drawLongestDriveOrder;
       const manualSave=document.getElementById("saveScoreManualHole");if(manualSave)manualSave.onclick=()=>saveManualHoleFromInputs(displayedScoreHole(),{parId:"scoreManualPar",siId:"scoreManualSi",si2Id:"scoreManualSi2",metresId:"scoreManualMetres"});
