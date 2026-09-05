@@ -32,4 +32,11 @@
 - Repeated Save taps cannot start overlapping hole saves.
 - No database changes or test-round resets are included.
 
-Validation: `node --check app.js`, the 30 existing checks in `node test-v6.js`, and 11 isolated save-flow tests in `node --test test-v8-save.js` pass. These tests use an in-memory database and include 990 ordinary handicap allocations plus split-index thresholds. Live NTP/LD re-save and second-device checks remain part of the dry run.
+## General match conditions update
+
+- Added Tequila at the Turn at the beginning of Hole 10.
+- Added official Writer Cup tees while supplies last.
+- Added official player gifts on tournament morning.
+- Added post-match prize presentations.
+
+Validation: `node --check app.js`, the 34 existing checks in `node test-v6.js`, and 11 isolated save-flow tests in `node --test test-v8-save.js` pass. These tests use an in-memory database and include 990 ordinary handicap allocations plus split-index thresholds. Live NTP/LD re-save and second-device checks remain part of the dry run.

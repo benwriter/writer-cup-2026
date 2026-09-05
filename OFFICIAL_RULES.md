@@ -56,6 +56,10 @@ The official 1–4 hitting order is randomly drawn before teeing off. Normal Sin
 - White Tees are used throughout.
 - Itchy & Scratchy wear **dark shirts**.
 - Berkeley Jail wear **light shirts**.
+- An official Writer Cup gift will be presented to each player on the morning of the tournament.
+- Official Writer Cup tees will be provided for use until all have been used.
+- A ceremonial shot of tequila will take place at the beginning of Hole 10 to officially mark **Tequila at the Turn**.
+- Official prize presentations will take place after the match.
 - No gimmies. Required putts must be holed.
 - R&A Rules of Golf and The Coast Golf Club Local Rules apply unless specifically modified by the Writer Cup rules.
 - Current Coast course conditions and temporary Local Rules should be checked on tournament day.
