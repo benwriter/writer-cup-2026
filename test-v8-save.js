@@ -76,9 +76,26 @@ function fixture({hole=7,progress=hole,saved=false,manual=false,sideHole=4,failR
 
 test('normal scoring advances and correction saves stay on the selected hole',async()=>{
   const normal=fixture();await normal.save();assert.equal(normal.shown(),8);
+  assert.equal(normal.run('recentHoleResult.hole'),7);
+  assert.match(normal.run('recentHoleResult.title'),/HOLE HALVED/);
+  assert.match(normal.run('recentHoleResult.detail'),/Combined Stableford/);
   for(const saved of [false,true]){
     const correction=fixture({hole:8,progress:12,saved});await correction.save();assert.equal(correction.shown(),8);
+    assert.equal(correction.run('recentHoleResult'),null);
   }
+});
+
+test('auto-advance recap is tailored to Scramble and Aggregate Singles',async()=>{
+  const scramble=fixture({hole:1});await scramble.save();
+  assert.match(scramble.run('recentHoleResult.title'),/BERKELEY JAIL WIN/);
+  assert.match(scramble.run('recentHoleResult.detail'),/4.*5/);
+
+  const singles=fixture({hole:13});
+  singles.inputs.Ben.value='4';singles.inputs.Dylan.value='5';singles.inputs.Joel.value='5';singles.inputs.Brent.value='6';
+  await singles.save();
+  assert.match(singles.run('recentHoleResult.title'),/HOLE 13 STABLEFORD RECORDED/);
+  assert.match(singles.run('recentHoleResult.detail'),/Ben.*Dylan.*Joel.*Brent/);
+  assert.match(singles.run('recentHoleResult.running'),/Running aggregate/);
 });
 
 test('hole 18 stays in place and only confirms completion after a live save',async()=>{

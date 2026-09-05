@@ -59,6 +59,8 @@ let realtimeChannel = null;
 let syncInFlight = null;
 let lastSyncedSideCompetitions = [];
 let scoreSaveInFlight = false;
+let recentHoleResult = null;
+let recentHoleResultTimer = null;
 
 function deepMerge(base, extra) {
   for (const [k,v] of Object.entries(extra || {})) {
@@ -708,6 +710,52 @@ function stablefordPreview(name,hole,gross){
   const pts=stablefordPoints(gross,hole.par,state.dailyHandicaps[name],hole.si,hole.si2);
   return `${strokes} shot${strokes===1?"":"s"} received · ${pts} Stableford pt${pts===1?"":"s"}`;
 }
+
+function savedHoleResultSummary(holeNumber){
+  const fmt=fmtForHole(holeNumber).key,s=getHoleScore(holeNumber);
+  if(fmt==="scramble"){
+    const winner=teamHoleWinner(holeNumber);
+    return {
+      hole:holeNumber,
+      title:winner==="bj"?"BERKELEY JAIL WIN THE HOLE":winner==="is"?"ITCHY & SCRATCHY WIN THE HOLE":"HOLE HALVED",
+      detail:`Scramble gross · Berkeley Jail ${s.bj} · Itchy & Scratchy ${s.is}`
+    };
+  }
+  if(fmt==="fourball_stableford"){
+    const totals=teamStablefordTotals(holeNumber),winner=teamHoleWinner(holeNumber);
+    return {
+      hole:holeNumber,
+      title:winner==="bj"?"BERKELEY JAIL WIN THE HOLE":winner==="is"?"ITCHY & SCRATCHY WIN THE HOLE":"HOLE HALVED",
+      detail:`Combined Stableford · Berkeley Jail ${totals?.bj??"—"} pts · Itchy & Scratchy ${totals?.is??"—"} pts`
+    };
+  }
+  const points=Object.fromEntries(Object.keys(tournament.players).map(name=>[name,playerStablefordForHole(name,holeNumber)]));
+  const benDylan=singlesAggregateState(["Ben","Dylan"]),joelBrent=singlesAggregateState(["Joel","Brent"]);
+  return {
+    hole:holeNumber,
+    title:`HOLE ${holeNumber} STABLEFORD RECORDED`,
+    detail:`Ben ${points.Ben??"—"} · Dylan ${points.Dylan??"—"} pts | Joel ${points.Joel??"—"} · Brent ${points.Brent??"—"} pts`,
+    running:`Running aggregate · Ben ${benDylan.aTotal}–${benDylan.bTotal} Dylan | Joel ${joelBrent.aTotal}–${joelBrent.bTotal} Brent`
+  };
+}
+function showRecentHoleResult(holeNumber){
+  recentHoleResult=savedHoleResultSummary(holeNumber);
+  clearTimeout(recentHoleResultTimer);
+  recentHoleResultTimer=setTimeout(()=>{
+    recentHoleResult=null;
+    if(route==="score")render();
+  },6000);
+}
+function dismissRecentHoleResult(){
+  clearTimeout(recentHoleResultTimer);
+  recentHoleResult=null;
+  render();
+}
+function recentHoleResultBanner(displayedHole){
+  const recap=recentHoleResult;
+  if(!recap||displayedHole!==recap.hole+1)return"";
+  return `<section class="recent-hole-result" id="recentHoleResult" role="status" aria-live="polite"><button id="dismissRecentHoleResult" aria-label="Dismiss previous-hole result">×</button><small>HOLE ${recap.hole} SAVED · HOLE ${displayedHole} READY</small><strong>${escapeHTML(recap.title)}</strong><span>${escapeHTML(recap.detail)}</span>${recap.running?`<em>${escapeHTML(recap.running)}</em>`:""}</section>`;
+}
 function refreshStablefordUnderScore(name,hole){
   const out=document.getElementById(`sf-${name}`),input=document.getElementById(name);
   if(!out||!input)return;
@@ -782,7 +830,7 @@ function scoreView(){
     ? `<button class="primary-button" id="saveScore" ${scoreSaveInFlight?"disabled":""}>${scoreSaveInFlight?"SAVING…":saveLabel}</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR HOLE ${hole.n} SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
     : `<button class="primary-button unlock-scorer-button" id="unlockScorer">🔒 UNLOCK SCORER MODE</button><div class="read-only-help">Only someone with the scorer PIN can save, edit or clear scores.</div>`;
   return `<div class="page-heading"><div class="eyebrow">${canEdit?"Scorer mode · unlocked":"Live scores · read only"}</div><h1>${canEdit?"Enter scores":"Scores"}</h1><p>${canEdit?"Enter gross scores. Stableford, match status and Cup points are calculated automatically.":"Follow the live scoring hole-by-hole. Unlock scorer mode only when you need to enter or correct a score."}</p></div>
-    ${modeBanner}<section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>&lt;</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${courseValue(hole.par)} · ${courseValue(hole.m," m")} · SI ${strokeIndexLabel(hole)}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>&gt;</button></div>
+    ${modeBanner}${recentHoleResultBanner(hole.n)}<section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>&lt;</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${courseValue(hole.par)} · ${courseValue(hole.m," m")} · SI ${strokeIndexLabel(hole)}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>&gt;</button></div>
       <div class="format-banner"><strong>${fmt.name}</strong><span>${fmt.note}</span></div>${canEdit?`${manualScoreHoleEditor(hole)}${standardSecondIndexEditor(hole)}`:""}${teeNote}${hcpWarning}<div>${inputs}</div>${result}${specialCompetitionPanel(hole,!canEdit)}
       <button class="course-link-button" id="scoreHoleGuide">⛳ VIEW HOLE ${hole.n} GUIDE</button>${actions}
     </section>`;
@@ -1103,7 +1151,7 @@ async function saveScoreValues(){
   }
 
   if(autoAdvance){
-    scoreBrowseHole=h+1;saveLocalState();toast(`Hole ${h} saved · Hole ${h+1} ready`);render();window.scrollTo({top:0,behavior:"smooth"});return;
+    scoreBrowseHole=h+1;showRecentHoleResult(h);saveLocalState();toast(`Hole ${h} saved · Hole ${h+1} ready`);render();window.scrollTo({top:0,behavior:"smooth"});return;
   }
   scoreBrowseHole=h;saveLocalState();
   toast(h===18&&!hadSaved&&progressHoleAtStart===18?"Hole 18 saved · round scoring complete":hadSaved?`Hole ${h} updated live`:`Hole ${h} saved live`);
@@ -1185,6 +1233,7 @@ function bindViewEvents(){
   if(route==="score"){
     const canEdit=Boolean(scorerPin());
     const shownHole=()=>displayedScoreHole();
+    const dismissResult=document.getElementById("dismissRecentHoleResult");if(dismissResult)dismissResult.onclick=dismissRecentHoleResult;
     document.getElementById("prevHole").onclick=()=>{scoreBrowseHole=Math.max(1,shownHole()-1);render();};
     document.getElementById("nextHole").onclick=()=>{scoreBrowseHole=Math.min(18,shownHole()+1);render();};
     if(canEdit){

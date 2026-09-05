@@ -545,6 +545,19 @@ body.photo-modal-open { overflow:hidden; }
 .score-mode-banner.spectator { background:#F4F8FB; border-color:rgba(22,69,111,.16); }
 .score-mode-banner.scorer { background:#F2F7F2; border-color:rgba(55,103,72,.22); }
 .score-mode-banner.scorer strong { color:#2F6845; }
+.recent-hole-result {
+  position:relative; margin:0 0 12px; padding:14px 42px 14px 15px; border-radius:16px;
+  display:flex; flex-direction:column; gap:4px; background:#F2F7F2; border:1px solid rgba(55,103,72,.30);
+  box-shadow:0 8px 22px rgba(36,92,58,.10);
+}
+.recent-hole-result small { color:#657387; font-size:.64rem; font-weight:850; letter-spacing:.055em; }
+.recent-hole-result strong { color:#245C3A; font-size:.91rem; line-height:1.25; }
+.recent-hole-result span { color:#001638; font-size:.74rem; line-height:1.35; }
+.recent-hole-result em { color:#657387; font-size:.68rem; line-height:1.35; font-style:normal; }
+.recent-hole-result button {
+  position:absolute; top:8px; right:8px; width:30px; height:30px; border:0; border-radius:50%;
+  background:rgba(55,103,72,.10); color:#245C3A; font-size:1.2rem; line-height:1; font-weight:700;
+}
 .score-input-row.read-only .stepper { opacity:.92; }
 .score-input-row.read-only .stepper button { opacity:.32; cursor:default; }
 .score-input-row.read-only .stepper input { background:#F6F7F4; color:#001638; font-weight:850; }

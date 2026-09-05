@@ -39,4 +39,12 @@
 - Added official player gifts on tournament morning.
 - Added post-match prize presentations.
 
+## Post-save result banner
+
+- Normal forward saves still advance immediately to the next hole.
+- The next scoring screen now shows the previous hole's result for six seconds.
+- Scramble and Combined Stableford banners identify the winning team or a halved hole.
+- Aggregate Singles banners show all four players' hole points and the running match totals.
+- Corrections remain on the selected hole and do not trigger the forward-scoring banner.
+
 Validation: `node --check app.js`, the 34 existing checks in `node test-v6.js`, and 11 isolated save-flow tests in `node --test test-v8-save.js` pass. These tests use an in-memory database and include 990 ordinary handicap allocations plus split-index thresholds. Live NTP/LD re-save and second-device checks remain part of the dry run.
