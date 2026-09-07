@@ -4,7 +4,7 @@
 
 - Normal live scoring now automatically advances to the next hole only after the full save sequence succeeds.
 - Editing or saving an earlier/correction hole stays on that hole.
-- Hole 18 stays on Hole 18 and confirms round scoring is complete.
+- Hole 18 stays on Hole 18 and invites the scorer to review the official result before locking it.
 - Save button wording now reflects the action:
   - SAVE HOLE X & NEXT
   - UPDATE HOLE X
@@ -30,7 +30,7 @@
 - After golf scores and all applicable side competitions save, a fresh Supabase read must match the scores, side-comp results, draw order and Standard second-index override before advancing or confirming completion.
 - A read already in progress is awaited, then a fresh read confirms the completed writes. Read failures and missing side-comp rows do not count as success.
 - Repeated Save taps cannot start overlapping hole saves.
-- No database changes or test-round resets are included.
+- No test-round reset is included.
 
 ## General match conditions update
 
@@ -42,9 +42,28 @@
 ## Post-save result banner
 
 - Normal forward saves still advance immediately to the next hole.
-- The next scoring screen now shows the previous hole's result for six seconds.
+- The next scoring screen now shows the previous hole's result for ten seconds.
 - Scramble and Combined Stableford banners identify the winning team or a halved hole.
 - Aggregate Singles banners show all four players' hole points and the running match totals.
 - Corrections remain on the selected hole and do not trigger the forward-scoring banner.
 
-Validation: `node --check app.js`, the 34 existing checks in `node test-v6.js`, and 11 isolated save-flow tests in `node --test test-v8-save.js` pass. These tests use an in-memory database and include 990 ordinary handicap allocations plus split-index thresholds. Live NTP/LD re-save and second-device checks remain part of the dry run.
+## Correction navigation
+
+- Browsing an earlier hole now shows a RETURN TO CURRENT HOLE button.
+- Updating a correction still stays on that hole, so the scorer can review the change before returning to live progress.
+
+## Course Setup mode controls
+
+- USE STANDARD and USE MANUAL now use identical button sizing.
+- The active course mode is filled navy and remains fully visible while selected.
+- The inactive course mode uses a white outlined treatment.
+
+## Final result protection
+
+- After all 18 holes, NTP and Longest Drive are saved, the scorer can review and choose FINALISE & LOCK RESULTS.
+- Finalised scores, handicaps, side competitions and course settings become read-only on every device.
+- Reopening a completed round requires a fresh scorer PIN, after which the result must be finalised again.
+- The lock is enforced in Supabase as well as in the interface, so an old or second device cannot bypass it.
+- Hole 18 no longer marks the round complete automatically; completion happens only after the explicit final review and lock.
+
+Validation: `node --check app.js`, all 40 checks in `node test-v6.js`, and all 13 isolated save-flow tests in `node --test test-v8-save.js` pass. These tests use an in-memory database and include 990 ordinary handicap allocations plus split-index thresholds. The Supabase lock also passed a rollback-only integration test covering finalise, blocked edits, PIN reopen, correction and relock; no test rows remained afterward.

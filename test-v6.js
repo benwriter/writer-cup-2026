@@ -29,11 +29,23 @@ const appended=`\n(()=>{\n  const T=[]; const check=(name,cond,detail='')=>T.pus
 vm.runInContext(prefix+appended,ctx);
 const results=ctx.__RESULTS;
 const matchConditions=ctx.rulesView();
+ctx.sessionStorage.setItem('writerCupCourseSetupUnlocked','1');
+const courseSetup=vm.runInContext('manualCourseSetupView()',ctx);
+const correctionView=vm.runInContext("state.tournamentStatus='live';state.currentHole=12;scoreBrowseHole=8;scoreView()",ctx);
+const completedScore=vm.runInContext("state.tournamentStatus='complete';state.currentHole=18;scoreBrowseHole=18;scoreView()",ctx);
+const completedCourseSetup=vm.runInContext('manualCourseSetupView()',ctx);
+const completedHandicaps=vm.runInContext('handicapsPanel()',ctx);
 results.push(
   {name:'Rules contain Tequila at the Turn',ok:matchConditions.includes('Tequila at the Turn')&&matchConditions.includes('beginning of Hole 10'),detail:''},
   {name:'Rules contain official Writer Cup tees',ok:matchConditions.includes('Official Writer Cup tees'),detail:''},
   {name:'Rules contain official player gifts',ok:matchConditions.includes('Official player gifts'),detail:''},
-  {name:'Rules contain post-match prize presentations',ok:matchConditions.includes('Prize presentations')&&matchConditions.includes('after the match'),detail:''}
+  {name:'Rules contain post-match prize presentations',ok:matchConditions.includes('Prize presentations')&&matchConditions.includes('after the match'),detail:''},
+  {name:'Course mode buttons use matching controls',ok:courseSetup.includes('class="course-mode-buttons"')&&(courseSetup.match(/class="course-mode-button /g)||[]).length===2,detail:''},
+  {name:'Selected course mode uses navy styling',ok:fs.readFileSync(__dirname+'/styles.css','utf8').includes('.course-mode-button.selected')&&fs.readFileSync(__dirname+'/styles.css','utf8').includes('background:#001638'),detail:''},
+  {name:'Correction view offers return to current hole',ok:correctionView.includes('RETURN TO CURRENT HOLE 12'),detail:''},
+  {name:'Completed round replaces score editing with PIN reopen',ok:completedScore.includes('OFFICIAL RESULT · LOCKED')&&completedScore.includes('UNLOCK COMPLETED ROUND')&&!completedScore.includes('id="saveScore"'),detail:''},
+  {name:'Completed round protects Course Setup',ok:completedCourseSetup.includes('COMPLETED ROUND LOCKED')&&!completedCourseSetup.includes('activateManualCourse'),detail:''},
+  {name:'Completed round protects Daily Handicaps',ok:completedHandicaps.includes('HANDICAPS LOCKED')&&completedHandicaps.includes('disabled'),detail:''}
 );
 const passed=results.filter(x=>x.ok).length;
 for(const t of results) console.log(`${t.ok?'PASS':'FAIL'}  ${t.name}${t.detail?' :: '+t.detail:''}`);

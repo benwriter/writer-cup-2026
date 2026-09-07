@@ -7,8 +7,8 @@ const source=fs.readFileSync(__dirname+'/app.js','utf8').split('document.querySe
 const data=fs.readFileSync(__dirname+'/data.js','utf8');
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{promise,resolve};};
 
-function fixture({hole=7,progress=hole,saved=false,manual=false,sideHole=4,failRpc,failRead,sideNoOp=false,sideGate,readGate,beforeRead}={}){
-  const storage={},messages=[],calls=[];
+function fixture({hole=7,progress=hole,saved=false,manual=false,sideHole=4,fullRound=false,failRpc,failRead,sideNoOp=false,sideGate,readGate,beforeRead}={}){
+  const storage={},messages=[],calls=[],timeouts=[];
   let reads=0;
   const remote={
     tournaments:{id:'writer-cup-2026',current_hole:progress,status:'live'},
@@ -24,6 +24,14 @@ function fixture({hole=7,progress=hole,saved=false,manual=false,sideHole=4,failR
       competitor_type:h<=6?'team':'player',competitor_id:id==='bj'?'berkeley-jail':id==='is'?'itchy-scratchy':id,gross_score});
   }
   if(saved)setScores(hole,hole<=6?{bj:5,is:5}:{ben:5,joel:5,dylan:5,brent:5});
+  if(fullRound){
+    for(let h=1;h<=18;h++)setScores(h,h<=6?{bj:4,is:5}:{ben:5,joel:5,dylan:5,brent:5});
+    remote.tournaments.current_hole=18;
+    remote.side_competitions=[
+      {competition_type:'ntp',winner_player_id:'ben',result_text:'2m',hitting_order:[]},
+      {competition_type:'longest_drive',winner_player_id:'joel',result_text:null,hitting_order:['ben','joel','dylan','brent']}
+    ];
+  }
   const db={
     from(table){
       if(table==='tournaments'){reads++;beforeRead?.(reads,remote);}
@@ -53,6 +61,8 @@ function fixture({hole=7,progress=hole,saved=false,manual=false,sideHole=4,failR
             result_text:args.p_result_text,hitting_order:args.p_hitting_order});
         }
       }
+      if(name==='writer_cup_finalise_round')remote.tournaments.status='complete';
+      if(name==='writer_cup_reopen_round')remote.tournaments.status='live';
       return{error:null};
     }
   };
@@ -62,16 +72,17 @@ function fixture({hole=7,progress=hole,saved=false,manual=false,sideHole=4,failR
     localStorage:{getItem:k=>storage[k]??null,setItem:(k,v)=>storage[k]=String(v),removeItem:k=>delete storage[k]},
     sessionStorage:{getItem:k=>storage['s:'+k]??null,setItem:(k,v)=>storage['s:'+k]=String(v),removeItem:k=>delete storage['s:'+k]},
     document:{getElementById:id=>inputs[id]||null},navigator:{onLine:true},
-    window:{supabase:{createClient:()=>db},WRITER_CUP_CONFIG:{SUPABASE_URL:'',SUPABASE_PUBLISHABLE_KEY:'',TOURNAMENT_ID:'writer-cup-2026'},scrollTo:()=>{}},
-    setTimeout:()=>0,clearTimeout:()=>{},messages};
+    window:{supabase:{createClient:()=>db},WRITER_CUP_CONFIG:{SUPABASE_URL:'',SUPABASE_PUBLISHABLE_KEY:'',TOURNAMENT_ID:'writer-cup-2026'},scrollTo:()=>{},confirm:()=>true,prompt:()=> '1234'},
+    setTimeout:(_fn,delay)=>{timeouts.push(delay);return timeouts.length;},clearTimeout:()=>{},messages};
   vm.createContext(ctx);vm.runInContext(data,ctx);vm.runInContext(source,ctx);
   const run=code=>vm.runInContext(code,ctx);
   ctx.remote=remote;
   run(`render=()=>{};toast=message=>messages.push(message);setScorerPin('1234');
     state.currentHole=${progress};scoreBrowseHole=${hole};
     state.scores=mapRemoteScores(remote.scores);state.dailyHandicaps=mapRemoteHandicaps(remote.daily_handicaps);
-    state.courseSettings=mapCourseSettings(remote.course_settings);state.sideGames.driveOrder=['Ben','Joel','Dylan','Brent'];`);
-  return{run,inputs,remote,messages,calls,ctx,get reads(){return reads;},save:()=>run('saveScore()'),shown:()=>run('displayedScoreHole()')};
+    state.courseSettings=mapCourseSettings(remote.course_settings);state.sideGames=mapRemoteSideGames(remote.side_competitions);
+    if(!state.sideGames.driveOrder.length)state.sideGames.driveOrder=['Ben','Joel','Dylan','Brent'];`);
+  return{run,inputs,remote,messages,calls,timeouts,ctx,get reads(){return reads;},save:()=>run('saveScore()'),shown:()=>run('displayedScoreHole()')};
 }
 
 test('normal scoring advances and correction saves stay on the selected hole',async()=>{
@@ -79,6 +90,7 @@ test('normal scoring advances and correction saves stay on the selected hole',as
   assert.equal(normal.run('recentHoleResult.hole'),7);
   assert.match(normal.run('recentHoleResult.title'),/HOLE HALVED/);
   assert.match(normal.run('recentHoleResult.detail'),/Combined Stableford/);
+  assert.ok(normal.timeouts.includes(10000),'previous-hole recap must stay visible for 10 seconds');
   for(const saved of [false,true]){
     const correction=fixture({hole:8,progress:12,saved});await correction.save();assert.equal(correction.shown(),8);
     assert.equal(correction.run('recentHoleResult'),null);
@@ -98,10 +110,28 @@ test('auto-advance recap is tailored to Scramble and Aggregate Singles',async()=
   assert.match(singles.run('recentHoleResult.running'),/Running aggregate/);
 });
 
-test('hole 18 stays in place and only confirms completion after a live save',async()=>{
-  const f=fixture({hole:18});await f.save();assert.equal(f.shown(),18);assert.match(f.messages.at(-1),/round scoring complete/);
+test('hole 18 stays in place and invites review before the explicit result lock',async()=>{
+  const f=fixture({hole:18});await f.save();assert.equal(f.shown(),18);assert.match(f.messages.at(-1),/review and lock official results/);
   const offline=fixture({hole:18});offline.ctx.navigator.onLine=false;await offline.save();
   assert.equal(offline.shown(),18);assert.doesNotMatch(offline.messages.at(-1),/complete/);
+});
+
+test('a complete round finalises read-only and requires a fresh PIN to reopen',async()=>{
+  const f=fixture({hole:18,progress:18,fullRound:true});
+  assert.equal(f.run('roundFinalisationReadiness().ready'),true);
+  assert.match(f.run('scoreView()'),/FINALISE &amp; LOCK RESULTS/);
+  await f.run('finaliseRound()');
+  assert.equal(f.remote.tournaments.status,'complete');
+  assert.equal(f.run('state.tournamentStatus'),'complete');
+  assert.equal(f.run('scorerPin()'),'');
+  const locked=f.run('scoreView()');
+  assert.match(locked,/OFFICIAL RESULT · LOCKED/);
+  assert.match(locked,/UNLOCK COMPLETED ROUND/);
+  assert.doesNotMatch(locked,/id="saveScore"/);
+  await f.run('reopenCompletedRound()');
+  assert.equal(f.remote.tournaments.status,'live');
+  assert.equal(f.run('state.tournamentStatus'),'live');
+  assert.equal(f.run('scorerPin()'),'1234');
 });
 
 test('offline and failed golf saves stay put and retain pending writes',async()=>{

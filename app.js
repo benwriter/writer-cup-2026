@@ -37,6 +37,7 @@ function normalizeStandardSi2Overrides(value){
 
 const initialState = {
   currentHole: 1,
+  tournamentStatus: "scheduled",
   scores: {},
   dailyHandicaps: { Ben:null, Joel:null, Dylan:null, Brent:null },
   sideGames: { ntpWinner:"", ntpDistance:"", longestWinner:"", driveOrder:[] },
@@ -294,6 +295,7 @@ function cupState() {
 }
 function currentLiveStatus() {
   const h=state.currentHole,cup=cupState();
+  if(state.tournamentStatus==="complete")return{title:cup.outcome,subtitle:"ROUND COMPLETE · OFFICIAL RESULTS LOCKED"};
   if(h<=6)return{title:cup.scramble.status,subtitle:`Writer Cup Scramble · ${cup.scramble.played} holes completed`};
   if(h<=12)return{title:cup.fourball.status,subtitle:`Combined Team Stableford · ${cup.fourball.played} holes completed`};
   return{title:"AGGREGATE SINGLES LIVE",subtitle:`${cup.benDylan.status} · ${cup.joelBrent.status}`};
@@ -443,6 +445,12 @@ async function syncFromSupabase({quiet=false,fresh=false}={}){
     const err=tRes.error||hRes.error||sRes.error||cRes.error||pRes.error||gRes.error||nRes.error||csRes.error;
     if(err)throw err;
     state.currentHole=tRes.data?.current_hole||state.currentHole;
+    state.tournamentStatus=tRes.data?.status||state.tournamentStatus;
+    if(state.tournamentStatus==="complete"){
+      clearScorerPin();
+      // Never allow a stale offline correction to apply automatically after official results are reopened.
+      setPendingWrites([]);
+    }
     state.dailyHandicaps=mapRemoteHandicaps(hRes.data);
     state.scores=mapRemoteScores(sRes.data);
     state.sideGames=mapRemoteSideGames(cRes.data);
@@ -484,6 +492,7 @@ function subscribeRealtime(){
 function pendingWrites(){try{return JSON.parse(localStorage.getItem("writerCupPendingWritesV4")||"[]");}catch{return[];}}
 function setPendingWrites(items){localStorage.setItem("writerCupPendingWritesV4",JSON.stringify(items));}
 function queueWrite(type,args){const q=pendingWrites();q.push({type,args,createdAt:new Date().toISOString()});setPendingWrites(q);}
+function isRoundLockedError(error){return /round is locked|completed round/i.test(error?.message||"");}
 async function rpcScorerWrite(functionName,args){
   const pin=requireScorerPin();if(!pin)return{ok:false,cancelled:true};
   const rpcArgs={...args,p_pin:pin};
@@ -491,6 +500,7 @@ async function rpcScorerWrite(functionName,args){
   const{error}=await db.rpc(functionName,rpcArgs);
   if(error){
     if((error.message||"").toLowerCase().includes("invalid scorer pin")){clearScorerPin();toast("Incorrect scorer PIN");return{ok:false,pin:true};}
+    if(isRoundLockedError(error)){state.tournamentStatus="complete";clearScorerPin();setPendingWrites([]);saveLocalState();toast("Official results are locked · reopen with the scorer PIN");render();return{ok:false,locked:true};}
     queueWrite(functionName,args);toast("Saved locally · sync pending");return{ok:true,offline:true};
   }
   await syncFromSupabase({quiet:true});return{ok:true};
@@ -599,11 +609,15 @@ async function saveSharedNote(playerId,hole,text){
   toast("Shared note saved");await syncFromSupabase({quiet:true});
 }
 async function flushPendingWrites(){
-  if(!navigator.onLine||!db||!scorerPin())return;
   const q=pendingWrites();if(!q.length)return;const remaining=[];
+  if(state.tournamentStatus==="complete"){setPendingWrites([]);return;}
+  if(!navigator.onLine||!db||!scorerPin())return;
   for(const item of q){
     const{error}=await db.rpc(item.type,{...item.args,p_pin:scorerPin()});
-    if(error){remaining.push(item);if((error.message||"").toLowerCase().includes("invalid scorer pin")){clearScorerPin();break;}}
+    if(error){
+      if(isRoundLockedError(error)){state.tournamentStatus="complete";clearScorerPin();break;}
+      remaining.push(item);if((error.message||"").toLowerCase().includes("invalid scorer pin")){clearScorerPin();break;}
+    }
   }
   setPendingWrites(remaining);
   if(!remaining.length){await syncFromSupabase({quiet:true});toast("Offline scores synced");}
@@ -744,7 +758,7 @@ function showRecentHoleResult(holeNumber){
   recentHoleResultTimer=setTimeout(()=>{
     recentHoleResult=null;
     if(route==="score")render();
-  },6000);
+  },10000);
 }
 function dismissRecentHoleResult(){
   clearTimeout(recentHoleResultTimer);
@@ -755,6 +769,27 @@ function recentHoleResultBanner(displayedHole){
   const recap=recentHoleResult;
   if(!recap||displayedHole!==recap.hole+1)return"";
   return `<section class="recent-hole-result" id="recentHoleResult" role="status" aria-live="polite"><button id="dismissRecentHoleResult" aria-label="Dismiss previous-hole result">×</button><small>HOLE ${recap.hole} SAVED · HOLE ${displayedHole} READY</small><strong>${escapeHTML(recap.title)}</strong><span>${escapeHTML(recap.detail)}</span>${recap.running?`<em>${escapeHTML(recap.running)}</em>`:""}</section>`;
+}
+function roundFinalisationReadiness(){
+  const missing=[];
+  for(let hole=1;hole<=18;hole++){
+    const score=getHoleScore(hole),required=hole<=6?["bj","is"]:["Ben","Joel","Dylan","Brent"];
+    if(required.some(key=>!Number.isFinite(score[key])))missing.push(`Hole ${hole}`);
+  }
+  if(!state.sideGames.ntpWinner)missing.push("NTP result");
+  if(!state.sideGames.longestWinner)missing.push("Longest Drive result");
+  return{ready:missing.length===0,missing};
+}
+function roundFinalisationPanel(canEdit=false,displayedHole=18){
+  if(displayedHole!==18||!Object.keys(getHoleScore(18)).length||state.tournamentStatus==="complete")return"";
+  const readiness=roundFinalisationReadiness(),cup=cupState();
+  if(!readiness.ready)return `<section class="round-finalise-panel waiting"><small>ROUND SCORING NOT YET READY TO LOCK</small><strong>Complete the remaining official results</strong><span>${escapeHTML(readiness.missing.join(" · "))}</span></section>`;
+  return `<section class="round-finalise-panel"><small>ALL 18 HOLES AND SIDE COMPETITIONS SAVED</small><strong>🏆 ${escapeHTML(cup.outcome)}</strong><span>Check the final scorecard, then lock the official result. Reopening later requires a fresh scorer PIN.</span>${canEdit?'<button class="primary-button" id="finaliseRound">FINALISE &amp; LOCK RESULTS</button>':'<em>Unlock scorer mode to finalise the official result.</em>'}</section>`;
+}
+function completedRoundPanel(){
+  if(state.tournamentStatus!=="complete")return"";
+  const cup=cupState();
+  return `<section class="round-locked-panel"><small>OFFICIAL RESULT · LOCKED</small><strong>🔒 ${escapeHTML(cup.outcome)}</strong><span>The completed scorecard, handicaps, course settings, NTP and Longest Drive are protected. A fresh scorer PIN is required to reopen scoring.</span></section>`;
 }
 function refreshStablefordUnderScore(name,hole){
   const out=document.getElementById(`sf-${name}`),input=document.getElementById(name);
@@ -792,7 +827,8 @@ function scorePreviewHole(){
 }
 
 function scoreView(){
-  const canEdit=Boolean(scorerPin());
+  const roundLocked=state.tournamentStatus==="complete";
+  const canEdit=Boolean(scorerPin())&&!roundLocked;
   const holeNumber=displayedScoreHole();
   const hole=activeHole(holeNumber),fmt=fmtForHole(hole.n),s=getHoleScore(hole.n);
   const hasSaved=Object.keys(s).length>0;
@@ -821,18 +857,23 @@ function scoreView(){
   }
   const teeNote=fmt.key==="scramble"?`<div class="tee-order"><b>WRITER CUP SCRAMBLE:</b> ${scrambleTeeNote(hole.n)}. The player whose tee ball is <b>not</b> chosen hits the next shot, then partners alternate until holed.</div>`:"";
   const hcpWarning=stablefordFormat&&!allDailyHandicapsSet()?`<div class="notice warning">Official Daily Handicaps are required for Stableford scoring on Holes 7–18. Calculations will update automatically once they are entered.</div>`:"";
-  const modeBanner=canEdit
-    ? `<div class="score-mode-banner scorer"><strong>✎ SCORER MODE</strong><span>Scores can be entered and changed on this phone.</span></div>`
-    : `<div class="score-mode-banner spectator"><strong>👀 READ-ONLY SCORE VIEW</strong><span>Live scores are visible. Scoring controls are locked.</span></div>`;
+  const modeBanner=roundLocked
+    ? `<div class="score-mode-banner completed"><strong>🔒 COMPLETED ROUND · RESULTS LOCKED</strong><span>Official results are protected on every device.</span></div>`
+    : canEdit
+      ? `<div class="score-mode-banner scorer"><strong>✎ SCORER MODE</strong><span>Scores can be entered and changed on this phone.</span></div>`
+      : `<div class="score-mode-banner spectator"><strong>👀 READ-ONLY SCORE VIEW</strong><span>Live scores are visible. Scoring controls are locked.</span></div>`;
   const normalProgress=!hasSaved&&hole.n===state.currentHole;
   const saveLabel=hasSaved?`UPDATE HOLE ${hole.n}`:normalProgress&&hole.n<18?`SAVE HOLE ${hole.n} & NEXT`:`SAVE HOLE ${hole.n}`;
-  const actions=canEdit
-    ? `<button class="primary-button" id="saveScore" ${scoreSaveInFlight?"disabled":""}>${scoreSaveInFlight?"SAVING…":saveLabel}</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR HOLE ${hole.n} SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
-    : `<button class="primary-button unlock-scorer-button" id="unlockScorer">🔒 UNLOCK SCORER MODE</button><div class="read-only-help">Only someone with the scorer PIN can save, edit or clear scores.</div>`;
-  return `<div class="page-heading"><div class="eyebrow">${canEdit?"Scorer mode · unlocked":"Live scores · read only"}</div><h1>${canEdit?"Enter scores":"Scores"}</h1><p>${canEdit?"Enter gross scores. Stableford, match status and Cup points are calculated automatically.":"Follow the live scoring hole-by-hole. Unlock scorer mode only when you need to enter or correct a score."}</p></div>
-    ${modeBanner}${recentHoleResultBanner(hole.n)}<section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>&lt;</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${courseValue(hole.par)} · ${courseValue(hole.m," m")} · SI ${strokeIndexLabel(hole)}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>&gt;</button></div>
+  const actions=roundLocked
+    ? `<button class="secondary-button reopen-round-button" id="reopenCompletedRound">🔒 UNLOCK COMPLETED ROUND</button><div class="read-only-help">A fresh scorer PIN is required before any official result can be changed.</div>`
+    : canEdit
+      ? `<button class="primary-button" id="saveScore" ${scoreSaveInFlight?"disabled":""}>${scoreSaveInFlight?"SAVING…":saveLabel}</button><button class="clear-score-button" id="clearHoleScores" ${hasSaved?"":"disabled"}>CLEAR HOLE ${hole.n} SAVED SCORES</button><button class="text-button" id="lockScorer">LOCK SCORER MODE</button>`
+      : `<button class="primary-button unlock-scorer-button" id="unlockScorer">🔒 UNLOCK SCORER MODE</button><div class="read-only-help">Only someone with the scorer PIN can save, edit or clear scores.</div>`;
+  const returnCurrent=hole.n!==state.currentHole?`<button class="return-current-hole" id="returnCurrentHole">↪ RETURN TO CURRENT HOLE ${state.currentHole}</button>`:"";
+  return `<div class="page-heading"><div class="eyebrow">${roundLocked?"Official result · locked":canEdit?"Scorer mode · unlocked":"Live scores · read only"}</div><h1>${roundLocked?"Completed round":canEdit?"Enter scores":"Scores"}</h1><p>${roundLocked?"The final scorecard is protected. Reopen the completed round only if an official correction is required.":canEdit?"Enter gross scores. Stableford, match status and Cup points are calculated automatically.":"Follow the live scoring hole-by-hole. Unlock scorer mode only when you need to enter or correct a score."}</p></div>
+    ${completedRoundPanel()}${modeBanner}${recentHoleResultBanner(hole.n)}<section class="card score-shell"><div class="hole-selector"><button id="prevHole" ${hole.n===1?"disabled":""}>&lt;</button><div class="hole-meta"><small>HOLE</small><strong>${hole.n}</strong><small>Par ${courseValue(hole.par)} · ${courseValue(hole.m," m")} · SI ${strokeIndexLabel(hole)}</small></div><button id="nextHole" ${hole.n===18?"disabled":""}>&gt;</button></div>${returnCurrent}
       <div class="format-banner"><strong>${fmt.name}</strong><span>${fmt.note}</span></div>${canEdit?`${manualScoreHoleEditor(hole)}${standardSecondIndexEditor(hole)}`:""}${teeNote}${hcpWarning}<div>${inputs}</div>${result}${specialCompetitionPanel(hole,!canEdit)}
-      <button class="course-link-button" id="scoreHoleGuide">⛳ VIEW HOLE ${hole.n} GUIDE</button>${actions}
+      <button class="course-link-button" id="scoreHoleGuide">⛳ VIEW HOLE ${hole.n} GUIDE</button>${roundFinalisationPanel(canEdit,hole.n)}${actions}
     </section>`;
 }
 function guideFor(hole){
@@ -969,13 +1010,15 @@ function scorecardView(){
   return `<div class="page-heading"><div class="eyebrow">${escapeHTML(activeCourseName())} · ${escapeHTML(activeTeeName())}</div><h1>Scorecard</h1><p>Gross scores plus Stableford and match results across all three Writer Cup formats.</p></div><div class="scorecard-wrap"><table class="scorecard"><thead><tr><th>Hole</th>${holes.map(h=>`<th>${h.n}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr><td>${r.label}</td>${holes.map(h=>`<td class="${r.cls||""}">${r.get(h)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 function handicapsPanel(){
-  return `<section class="card settings-card"><strong>Stableford Daily Handicaps</strong><p>Enter each player's official Daily Handicap for the tees being played. These handicaps drive Stableford scoring on Holes 7–18.</p><div class="hcp-grid">${Object.keys(tournament.players).map(name=>`<label><span>${name}</span><input class="hcp-input" id="hcp-${name}" inputmode="numeric" value="${Number.isFinite(state.dailyHandicaps[name])?state.dailyHandicaps[name]:""}" placeholder="TBC"></label>`).join("")}</div><button class="secondary-button" id="saveHandicaps">SAVE HANDICAPS LIVE</button></section>`;
+  const locked=state.tournamentStatus==="complete";
+  return `<section class="card settings-card"><strong>Stableford Daily Handicaps</strong><p>Enter each player's official Daily Handicap for the tees being played. These handicaps drive Stableford scoring on Holes 7–18.</p>${locked?'<div class="notice"><b>Official results locked:</b> Handicaps are protected with the completed scorecard.</div>':""}<div class="hcp-grid">${Object.keys(tournament.players).map(name=>`<label><span>${name}</span><input class="hcp-input" id="hcp-${name}" inputmode="numeric" value="${Number.isFinite(state.dailyHandicaps[name])?state.dailyHandicaps[name]:""}" placeholder="TBC" ${locked?"disabled":""}></label>`).join("")}</div><button class="secondary-button" id="saveHandicaps" ${locked?"disabled":""}>${locked?"HANDICAPS LOCKED":"SAVE HANDICAPS LIVE"}</button></section>`;
 }
 function devicePlayerPanel(){
   const me=devicePlayerId();
   return `<section class="card settings-card"><strong>This phone belongs to</strong><p>This is only a convenience setting, not a login. It decides which shared note box is editable on this phone.</p><select class="device-player-select" id="hqDevicePlayer"><option value="">Choose player…</option>${Object.keys(tournament.players).map(name=>{const id=tournament.players[name].id;return`<option value="${id}" ${me===id?"selected":""}>${name}</option>`}).join("")}</select></section>`;
 }
 function manualCourseSetupView(){
+  if(state.tournamentStatus==="complete")return `<div class="page-heading"><div class="eyebrow">Official result · locked</div><h1>Course Setup</h1><p>The completed tournament course and scoring indexes are protected with the final results.</p></div><section class="card settings-card"><strong>🔒 COMPLETED ROUND LOCKED</strong><p>Reopen the completed round from the Scores screen with the scorer PIN before changing course settings.</p><button class="primary-button" data-route="score">VIEW COMPLETED SCORES</button></section><button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
   if(!courseSetupUnlocked())return `<div class="page-heading"><div class="eyebrow">Scorer controlled</div><h1>Course Setup</h1><p>Course configuration is protected so tournament settings cannot be changed accidentally.</p></div>
     <section class="card settings-card"><strong>🔒 COURSE SETUP LOCKED</strong><p>Enter the scorer PIN to view or change Standard / Manual Course settings, hole values, NTP or Longest Drive.</p><button class="primary-button" id="unlockCourseSetup">UNLOCK COURSE SETUP</button></section>
     <button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
@@ -983,7 +1026,7 @@ function manualCourseSetupView(){
   const options=Array.from({length:18},(_,i)=>`<option value="${i+1}" ${(i+1)===Number(cs.ntpHole)?"selected":""}>Hole ${i+1}</option>`).join("");
   const ldOptions=Array.from({length:18},(_,i)=>`<option value="${i+1}" ${(i+1)===Number(cs.longestDriveHole)?"selected":""}>Hole ${i+1}</option>`).join("");
   return `<div class="page-heading"><div class="eyebrow">Scorer controlled</div><h1>Course Setup</h1><p>Standard Course stays preloaded. Manual Course is a universal 18-hole backup that can be completed progressively from this phone.</p></div>
-    <section class="card settings-card"><strong>ACTIVE COURSE</strong><p><b>${manualCourseActive()?"Manual Course":"Standard Course · The Coast"}</b></p><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button class="secondary-button" id="activateStandardCourse" ${manualCourseActive()?"":"disabled"}>USE STANDARD</button><button class="primary-button" id="activateManualCourse" ${manualCourseActive()?"disabled":""}>USE MANUAL</button></div><small>Switching is locked once Stableford scoring has started. If Manual Course may be needed, activate it before the round and enter each hole as you reach it.</small></section>
+    <section class="card settings-card"><strong>ACTIVE COURSE</strong><p><b>${manualCourseActive()?"Manual Course":"Standard Course · The Coast"}</b></p><div class="course-mode-buttons"><button class="course-mode-button ${manualCourseActive()?"":"selected"}" id="activateStandardCourse" aria-pressed="${manualCourseActive()?"false":"true"}" ${manualCourseActive()?"":"disabled"}>USE STANDARD</button><button class="course-mode-button ${manualCourseActive()?"selected":""}" id="activateManualCourse" aria-pressed="${manualCourseActive()?"true":"false"}" ${manualCourseActive()?"disabled":""}>USE MANUAL</button></div><small>Switching is locked once Stableford scoring has started. If Manual Course may be needed, activate it before the round and enter each hole as you reach it.</small></section>
     <section class="card settings-card"><strong>MANUAL COURSE OPTIONS</strong><p>${configured}/18 holes currently have Par + SI entered.</p><label class="field-label">COURSE NAME · OPTIONAL<input id="manualCourseName" maxlength="80" value="${escapeHTML(cs.courseName||"")}" placeholder="e.g. The Coast · Temporary Routing"></label><label class="field-label">TEE · OPTIONAL<input id="manualCourseTee" maxlength="40" value="${escapeHTML(cs.tee||"")}" placeholder="White / Gold / Red / Blue"></label><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="field-label">🎯 NTP HOLE<select id="manualNtpHole" style="min-height:56px;font-size:1.05rem;font-weight:800;padding:0 12px">${options}</select></label><label class="field-label">🚀 LONGEST DRIVE<select id="manualLdHole" style="min-height:56px;font-size:1.05rem;font-weight:800;padding:0 12px">${ldOptions}</select></label></div><button class="secondary-button" id="saveManualCourseOptions" style="margin-top:18px">SAVE COURSE OPTIONS</button><small>Longest Drive's random 1–4 tee order stays attached to the Longest Drive competition wherever you move it.</small></section>
     <div class="section-title"><h2>Manual holes</h2><span>${configured}/18 ready</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">${holes.map(x=>`<button class="secondary-button manual-hole-pick" data-manual-hole="${x.n}" style="padding:10px 6px;${x.n===selectedManualHole?"outline:2px solid var(--gold);":""}"><b>H${x.n}</b><small style="display:block">${holeSetupComplete(x)?`P${x.par} · SI${strokeIndexLabel(x)}`:"Not set"}</small></button>`).join("")}</div>
     <section class="card settings-card"><strong>HOLE ${h.n}</strong><p>${holeSetupComplete(h)?`Par ${h.par} · SI ${strokeIndexLabel(h)}${Number.isFinite(h.m)?` · ${h.m}m`:""}`:"Enter Par and Stroke Index before scoring this hole."}</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label class="field-label">PAR<input id="manualSetupPar" inputmode="numeric" value="${manualHoleInputValue(h.par)}" placeholder="4"></label><label class="field-label">SI<input id="manualSetupSi" inputmode="numeric" value="${manualHoleInputValue(h.si)}" placeholder="1–18"></label><label class="field-label">2ND SI · OPTIONAL<input id="manualSetupSi2" inputmode="numeric" value="${manualHoleInputValue(h.si2)}" placeholder="19–36"></label><label class="field-label">METRES · OPTIONAL<input id="manualSetupMetres" inputmode="numeric" value="${manualHoleInputValue(h.m)}" placeholder="optional"></label></div><small>If the scorecard shows a split index such as <b>3 / 22</b>, enter 3 as SI and 22 as 2ND SI. Leave 2ND SI blank on a normal 1–18 card.</small><button class="primary-button" id="saveManualSetupHole">SAVE HOLE ${h.n}</button><button class="text-button" id="clearManualSetupHole">CLEAR HOLE ${h.n} VALUES</button></section>
@@ -1064,6 +1107,41 @@ async function saveScore(){
     if(currentButton===button&&button){button.disabled=false;button.textContent=label;}
     else if(route==="score")render();
   }
+}
+
+async function finaliseRound(){
+  const readiness=roundFinalisationReadiness();
+  if(!readiness.ready)return toast(`Complete ${readiness.missing.join(", ")} before locking the round`);
+  if(pendingWrites().length)return toast("Wait for all pending scores to sync before locking the round");
+  if(!navigator.onLine||!db)return toast("Connect to the internet to finalise and lock results");
+  const pin=scorerPin();if(!pin)return toast("Unlock scorer mode before finalising the round");
+  if(!window.confirm("FINALISE AND LOCK THE OFFICIAL RESULTS?\n\nScores, handicaps, course settings, NTP and Longest Drive will become read-only. Reopening requires the scorer PIN."))return;
+  toast("Finalising official results…");
+  const{error}=await db.rpc("writer_cup_finalise_round",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_pin:pin});
+  if(error){
+    if((error.message||"").toLowerCase().includes("invalid scorer pin")){clearScorerPin();toast("Incorrect scorer PIN");render();return;}
+    toast(error.message||"Round could not be finalised");return;
+  }
+  await syncFromSupabase({quiet:true,fresh:true});
+  if(state.tournamentStatus!=="complete")return toast("Round lock could not be confirmed · try again");
+  scoreBrowseHole=18;clearScorerPin();saveLocalState();toast("Official results finalised and locked");render();
+}
+
+async function reopenCompletedRound(){
+  if(state.tournamentStatus!=="complete")return;
+  if(!navigator.onLine||!db)return toast("Connect to the internet to reopen completed scoring");
+  if(!window.confirm("REOPEN THE COMPLETED ROUND?\n\nThis allows the official result to be changed. You will need to finalise and lock the round again after correcting it."))return;
+  let pin=window.prompt("Enter scorer PIN to reopen the completed round");
+  if(!pin)return;
+  pin=String(pin).trim();
+  if(!/^\d{4,6}$/.test(pin))return toast("Enter the 4–6 digit scorer PIN");
+  toast("Checking PIN and reopening scoring…");
+  const{error}=await db.rpc("writer_cup_reopen_round",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_pin:pin});
+  if(error){toast((error.message||"").toLowerCase().includes("invalid scorer pin")?"Incorrect scorer PIN":error.message||"Completed round could not be reopened");return;}
+  setScorerPin(pin);scoreBrowseHole=18;
+  await syncFromSupabase({quiet:true,fresh:true});
+  if(state.tournamentStatus==="complete"){clearScorerPin();return toast("Round reopen could not be confirmed · try again");}
+  saveLocalState();toast("Completed round reopened · make the correction, then lock it again");render();
 }
 
 function holeSaveMatchesRemote(h,score,sideCompetitions){
@@ -1154,7 +1232,7 @@ async function saveScoreValues(){
     scoreBrowseHole=h+1;showRecentHoleResult(h);saveLocalState();toast(`Hole ${h} saved · Hole ${h+1} ready`);render();window.scrollTo({top:0,behavior:"smooth"});return;
   }
   scoreBrowseHole=h;saveLocalState();
-  toast(h===18&&!hadSaved&&progressHoleAtStart===18?"Hole 18 saved · round scoring complete":hadSaved?`Hole ${h} updated live`:`Hole ${h} saved live`);
+  toast(h===18&&!hadSaved&&progressHoleAtStart===18?"Hole 18 saved · review and lock official results":hadSaved?`Hole ${h} updated live`:`Hole ${h} saved live`);
   render();
 }
 async function clearHoleScores(){
@@ -1231,9 +1309,12 @@ function bindViewEvents(){
 
   if(route==="live"){const r=document.getElementById("manualRefresh");if(r)r.onclick=()=>syncFromSupabase();}
   if(route==="score"){
-    const canEdit=Boolean(scorerPin());
+    const canEdit=Boolean(scorerPin())&&state.tournamentStatus!=="complete";
     const shownHole=()=>displayedScoreHole();
     const dismissResult=document.getElementById("dismissRecentHoleResult");if(dismissResult)dismissResult.onclick=dismissRecentHoleResult;
+    const returnCurrent=document.getElementById("returnCurrentHole");if(returnCurrent)returnCurrent.onclick=()=>{scoreBrowseHole=state.currentHole;render();window.scrollTo({top:0,behavior:"smooth"});};
+    const finalise=document.getElementById("finaliseRound");if(finalise)finalise.onclick=finaliseRound;
+    const reopen=document.getElementById("reopenCompletedRound");if(reopen)reopen.onclick=reopenCompletedRound;
     document.getElementById("prevHole").onclick=()=>{scoreBrowseHole=Math.max(1,shownHole()-1);render();};
     document.getElementById("nextHole").onclick=()=>{scoreBrowseHole=Math.min(18,shownHole()+1);render();};
     if(canEdit){
@@ -1294,7 +1375,7 @@ function bindViewEvents(){
   }
   if(route==="more"){
     const dp=document.getElementById("hqDevicePlayer");if(dp)dp.onchange=()=>{setDevicePlayerId(dp.value);toast(dp.value?`${playerNameFromId(dp.value)} selected on this phone`:"Player selection cleared");};
-    document.getElementById("saveHandicaps").onclick=async()=>{
+    const saveHandicaps=document.getElementById("saveHandicaps");if(saveHandicaps&&!saveHandicaps.disabled)saveHandicaps.onclick=async()=>{
       const values={};for(const name of Object.keys(tournament.players)){const raw=document.getElementById(`hcp-${name}`).value.trim();if(raw==="")return toast(`Enter ${name}'s Daily Handicap`);values[tournament.players[name].id]=Math.max(0,Math.min(54,Number(raw)));}
       const result=await rpcScorerWrite("writer_cup_set_handicaps",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_handicaps:values});
       if(result.ok){Object.keys(tournament.players).forEach(n=>state.dailyHandicaps[n]=values[tournament.players[n].id]);saveLocalState();toast("Daily Handicaps saved live");render();}

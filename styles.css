@@ -545,6 +545,17 @@ body.photo-modal-open { overflow:hidden; }
 .score-mode-banner.spectator { background:#F4F8FB; border-color:rgba(22,69,111,.16); }
 .score-mode-banner.scorer { background:#F2F7F2; border-color:rgba(55,103,72,.22); }
 .score-mode-banner.scorer strong { color:#2F6845; }
+.score-mode-banner.completed { background:#F4F1E8; border-color:rgba(176,137,52,.30); }
+.score-mode-banner.completed strong { color:#6E5319; }
+.course-mode-buttons { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.course-mode-button {
+  width:100%; min-height:48px; margin:0; padding:11px 8px; border-radius:13px;
+  border:1px solid rgba(0,22,56,.25); background:#FFFFFF; color:#001638;
+  font-size:.72rem; font-weight:900; letter-spacing:.035em;
+}
+.course-mode-button.selected,
+.course-mode-button.selected:disabled { background:#001638; border-color:#001638; color:#FFFFFF; opacity:1; cursor:default; }
+.course-mode-button:not(.selected):hover { background:#F4F6F8; }
 .recent-hole-result {
   position:relative; margin:0 0 12px; padding:14px 42px 14px 15px; border-radius:16px;
   display:flex; flex-direction:column; gap:4px; background:#F2F7F2; border:1px solid rgba(55,103,72,.30);
@@ -558,6 +569,25 @@ body.photo-modal-open { overflow:hidden; }
   position:absolute; top:8px; right:8px; width:30px; height:30px; border:0; border-radius:50%;
   background:rgba(55,103,72,.10); color:#245C3A; font-size:1.2rem; line-height:1; font-weight:700;
 }
+.return-current-hole {
+  width:100%; margin:0 0 12px; padding:11px 12px; border:1px solid rgba(0,22,56,.20); border-radius:13px;
+  background:#F4F6F8; color:#001638; font-size:.72rem; font-weight:900; letter-spacing:.025em;
+}
+.round-finalise-panel,
+.round-locked-panel {
+  margin:14px 0; padding:16px; border-radius:16px; display:flex; flex-direction:column; gap:6px;
+  background:#F4F1E8; border:1px solid rgba(176,137,52,.34);
+}
+.round-finalise-panel.waiting { background:#F7F7F5; border-color:rgba(0,22,56,.14); }
+.round-finalise-panel small,
+.round-locked-panel small { color:#75612F; font-size:.65rem; font-weight:900; letter-spacing:.055em; }
+.round-finalise-panel strong,
+.round-locked-panel strong { color:#001638; font-size:1rem; line-height:1.3; }
+.round-finalise-panel span,
+.round-locked-panel span { color:#536174; font-size:.76rem; line-height:1.45; }
+.round-finalise-panel em { color:#657387; font-size:.72rem; line-height:1.4; font-style:normal; }
+.round-finalise-panel .primary-button { margin:8px 0 0; }
+.reopen-round-button { margin-top:12px; }
 .score-input-row.read-only .stepper { opacity:.92; }
 .score-input-row.read-only .stepper button { opacity:.32; cursor:default; }
 .score-input-row.read-only .stepper input { background:#F6F7F4; color:#001638; font-weight:850; }
