@@ -66,4 +66,17 @@
 - The lock is enforced in Supabase as well as in the interface, so an old or second device cannot bypass it.
 - Hole 18 no longer marks the round complete automatically; completion happens only after the explicit final review and lock.
 
-Validation: `node --check app.js`, all 40 checks in `node test-v6.js`, and all 13 isolated save-flow tests in `node --test test-v8-save.js` pass. These tests use an in-memory database and include 990 ordinary handicap allocations plus split-index thresholds. The Supabase lock also passed a rollback-only integration test covering finalise, blocked edits, PIN reopen, correction and relock; no test rows remained afterward.
+## Installed-app refresh
+
+- Versioned JavaScript and stylesheet URLs ensure phones and Macs receive this final V8 build instead of retaining an older installed-app cache.
+- The service-worker cache is advanced to the final V8 release while preserving offline opening after the new version has loaded once.
+
+## Unsaved score protection
+
+- Partially entered scores now survive Supabase Realtime and background-sync redraws instead of returning to the last saved value.
+- Draft protection follows each hole while navigating and also covers the Standard 2ND SI override plus NTP/Longest Drive entry fields.
+- A draft is cleared only after the complete hole save is confirmed live, or after the hole's saved scores are deliberately cleared.
+- Failed, offline or unconfirmed saves retain the entries on screen for a safe retry.
+- The installed-app cache advances again so phones and Macs receive this protection after the GitHub deployment.
+
+Validation: `node --check app.js`, all 43 checks in `node test-v6.js`, and all 15 isolated save-flow tests in `node --test test-v8-save.js` pass. These tests use an in-memory database and include 990 ordinary handicap allocations plus split-index thresholds. The Supabase lock also passed a rollback-only integration test covering finalise, blocked edits, PIN reopen, correction and relock; no test rows remained afterward.

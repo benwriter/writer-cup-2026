@@ -62,6 +62,24 @@ let lastSyncedSideCompetitions = [];
 let scoreSaveInFlight = false;
 let recentHoleResult = null;
 let recentHoleResultTimer = null;
+// Unsaved scorer entries live here so a Realtime/background sync can redraw the
+// page without replacing partially entered values with the last server copy.
+let scoreFormDrafts = {};
+
+function scoreFormDraft(holeNumber){return scoreFormDrafts[holeNumber]||null;}
+function scoreDraftValue(holeNumber,key,fallback){
+  const draft=scoreFormDraft(holeNumber);
+  return draft&&Object.prototype.hasOwnProperty.call(draft,key)?draft[key]:fallback;
+}
+function setScoreDraftValue(holeNumber,key,value){
+  scoreFormDrafts[holeNumber]={...(scoreFormDrafts[holeNumber]||{}),[key]:value};
+}
+function clearScoreFormDraft(holeNumber){delete scoreFormDrafts[holeNumber];}
+function clearAllScoreFormDrafts(){scoreFormDrafts={};}
+function draftGross(value){
+  if(value===""||value===null||value===undefined)return undefined;
+  const gross=Number(value);return Number.isFinite(gross)?gross:undefined;
+}
 
 function deepMerge(base, extra) {
   for (const [k,v] of Object.entries(extra || {})) {
@@ -448,6 +466,7 @@ async function syncFromSupabase({quiet=false,fresh=false}={}){
     state.tournamentStatus=tRes.data?.status||state.tournamentStatus;
     if(state.tournamentStatus==="complete"){
       clearScorerPin();
+      clearAllScoreFormDrafts();
       // Never allow a stale offline correction to apply automatically after official results are reopened.
       setPendingWrites([]);
     }
@@ -714,7 +733,8 @@ function liveView(){
     <button class="secondary-button" id="manualRefresh">REFRESH LIVE DATA</button>`;
 }
 function stepper(id,label,detail,value,readOnly=false,stablefordLine=""){
-  return `<div class="score-input-row ${readOnly?"read-only":""}"><div class="score-input-copy"><strong>${label}</strong><small>${detail}</small></div><div class="score-control-stack"><div class="stepper"><button data-step="${id}" data-delta="-1" ${readOnly?"disabled":""} aria-label="Decrease ${escapeHTML(label)} score">−</button><input id="${id}" inputmode="numeric" pattern="[0-9]*" value="${value??(readOnly?"":0)}" placeholder="–" ${readOnly?"readonly":""} aria-label="${escapeHTML(label)} gross score"><button data-step="${id}" data-delta="1" ${readOnly?"disabled":""} aria-label="Increase ${escapeHTML(label)} score">+</button></div>${stablefordLine?`<small class="stableford-under-score" id="sf-${id}">${stablefordLine}</small>`:""}</div></div>`;
+  const shown=value??(readOnly?"":0);
+  return `<div class="score-input-row ${readOnly?"read-only":""}"><div class="score-input-copy"><strong>${label}</strong><small>${detail}</small></div><div class="score-control-stack"><div class="stepper"><button data-step="${id}" data-delta="-1" ${readOnly?"disabled":""} aria-label="Decrease ${escapeHTML(label)} score">−</button><input id="${id}" inputmode="numeric" pattern="[0-9]*" value="${escapeHTML(String(shown))}" placeholder="–" ${readOnly?"readonly":""} aria-label="${escapeHTML(label)} gross score"><button data-step="${id}" data-delta="1" ${readOnly?"disabled":""} aria-label="Increase ${escapeHTML(label)} score">+</button></div>${stablefordLine?`<small class="stableford-under-score" id="sf-${id}">${stablefordLine}</small>`:""}</div></div>`;
 }
 function stablefordPreview(name,hole,gross){
   if(!holeSetupComplete(hole))return"Course setup required";
@@ -801,10 +821,13 @@ function specialCompetitionPanel(hole,readOnly=false){
   const panels=[];
   if(hole.n===ntpHoleNumber()){
     const formatNote=hole.n<=6?"All four normal Scramble tee shots are eligible.":"All four normal Writer Cup tee shots are eligible.";
-    panels.push(`<div class="special-panel"><strong>🎯 Hole ${hole.n} · Nearest to the Pin</strong><span>${formatNote} Ball must finish on the putting green.</span><select id="ntpWinnerSelect" ${readOnly?"disabled":""}><option value="">NTP winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option ${state.sideGames.ntpWinner===p?"selected":""}>${p}</option>`).join("")}<option value="No winner" ${state.sideGames.ntpWinner==="No winner"?"selected":""}>No qualifying ball</option></select><input id="ntpDistanceInput" placeholder="Optional distance, e.g. 2.4 m" value="${escapeHTML(state.sideGames.ntpDistance)}" ${readOnly?"readonly":""}></div>`);
+    const winner=readOnly?state.sideGames.ntpWinner:scoreDraftValue(hole.n,"ntpWinnerSelect",state.sideGames.ntpWinner);
+    const distance=readOnly?state.sideGames.ntpDistance:scoreDraftValue(hole.n,"ntpDistanceInput",state.sideGames.ntpDistance);
+    panels.push(`<div class="special-panel"><strong>🎯 Hole ${hole.n} · Nearest to the Pin</strong><span>${formatNote} Ball must finish on the putting green.</span><select id="ntpWinnerSelect" ${readOnly?"disabled":""}><option value="">NTP winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option ${winner===p?"selected":""}>${p}</option>`).join("")}<option value="No winner" ${winner==="No winner"?"selected":""}>No qualifying ball</option></select><input id="ntpDistanceInput" placeholder="Optional distance, e.g. 2.4 m" value="${escapeHTML(distance)}" ${readOnly?"readonly":""}></div>`);
   }
   if(hole.n===longestDriveHoleNumber()){
-    panels.push(`<div class="special-panel"><strong>🚀 Hole ${hole.n} · Longest Drive</strong><span>Normal Writer Cup tee balls remain live. Ball must finish on the fairway. The official 1–4 tee order is drawn at random.</span><div class="draw-order">${state.sideGames.driveOrder.length?state.sideGames.driveOrder.map((p,i)=>`<b class="${i===0?"first-draw":""}">${i+1}. ${escapeHTML(displayNameForKey(p))}${i===0?" · TEES OFF FIRST":""}</b>`).join(""):"Draw not completed"}</div>${readOnly?"":'<button class="secondary-button compact" id="drawOrder">🎲 DRAW TEE ORDER 1–4</button>'}<select id="longestWinnerSelect" ${readOnly?"disabled":""}><option value="">Longest Drive winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option value="${p}" ${state.sideGames.longestWinner===p?"selected":""}>${escapeHTML(displayNameForKey(p))}</option>`).join("")}<option value="No winner" ${state.sideGames.longestWinner==="No winner"?"selected":""}>Nobody hit the fairway</option></select></div>`);
+    const winner=readOnly?state.sideGames.longestWinner:scoreDraftValue(hole.n,"longestWinnerSelect",state.sideGames.longestWinner);
+    panels.push(`<div class="special-panel"><strong>🚀 Hole ${hole.n} · Longest Drive</strong><span>Normal Writer Cup tee balls remain live. Ball must finish on the fairway. The official 1–4 tee order is drawn at random.</span><div class="draw-order">${state.sideGames.driveOrder.length?state.sideGames.driveOrder.map((p,i)=>`<b class="${i===0?"first-draw":""}">${i+1}. ${escapeHTML(displayNameForKey(p))}${i===0?" · TEES OFF FIRST":""}</b>`).join(""):"Draw not completed"}</div>${readOnly?"":'<button class="secondary-button compact" id="drawOrder">🎲 DRAW TEE ORDER 1–4</button>'}<select id="longestWinnerSelect" ${readOnly?"disabled":""}><option value="">Longest Drive winner not set</option>${["Ben","Joel","Dylan","Brent"].map(p=>`<option value="${p}" ${winner===p?"selected":""}>${escapeHTML(displayNameForKey(p))}</option>`).join("")}<option value="No winner" ${winner==="No winner"?"selected":""}>Nobody hit the fairway</option></select></div>`);
   }
   return panels.join("");
 }
@@ -815,7 +838,8 @@ function manualScoreHoleEditor(hole){
 function standardSecondIndexEditor(hole){
   if(manualCourseActive()||hole.n<7)return"";
   const stored=standardSecondIndexOverride(hole.n),assumed=Number(hole.si)+18;
-  return `<div class="special-panel" style="border-style:dashed"><strong>2ND SI · OPTIONAL OVERRIDE</strong><span>Standard Course assumes <b>${hole.si} / ${assumed}</b>. If today's printed card shows a different second index, enter it here. Leave blank to use ${assumed}. The override saves with this hole.</span><label style="display:block;margin-top:8px"><small>2ND SI · 19–36</small><input id="standardSi2Override" inputmode="numeric" value="${Number.isFinite(stored)?stored:""}" placeholder="${assumed} · default"></label></div>`;
+  const shown=scoreDraftValue(hole.n,"standardSi2Override",Number.isFinite(stored)?stored:"");
+  return `<div class="special-panel" style="border-style:dashed"><strong>2ND SI · OPTIONAL OVERRIDE</strong><span>Standard Course assumes <b>${hole.si} / ${assumed}</b>. If today's printed card shows a different second index, enter it here. Leave blank to use ${assumed}. The override saves with this hole.</span><label style="display:block;margin-top:8px"><small>2ND SI · 19–36</small><input id="standardSi2Override" inputmode="numeric" value="${escapeHTML(String(shown))}" placeholder="${assumed} · default"></label></div>`;
 }
 function scorePreviewHole(){
   const hole=activeHole(displayedScoreHole()),input=document.getElementById("standardSi2Override");
@@ -835,13 +859,14 @@ function scoreView(){
   const stablefordFormat=fmt.key==="fourball_stableford"||fmt.key==="singles_aggregate";
   let inputs="";
   if(fmt.key==="scramble"){
-    inputs=stepper("bj","Berkeley Jail","One team gross score · Ben + Joel",s.bj,!canEdit)+stepper("is","Itchy & Scratchy","One team gross score · Dylan + Brent",s.is,!canEdit);
+    inputs=stepper("bj","Berkeley Jail","One team gross score · Ben + Joel",canEdit?scoreDraftValue(hole.n,"bj",s.bj):s.bj,!canEdit)+stepper("is","Itchy & Scratchy","One team gross score · Dylan + Brent",canEdit?scoreDraftValue(hole.n,"is",s.is):s.is,!canEdit);
   }else{
     inputs=Object.keys(tournament.players).map(name=>{
       const strokes=holeSetupComplete(hole)&&Number.isFinite(state.dailyHandicaps[name])?stablefordStrokesReceived(state.dailyHandicaps[name],hole.si,hole.si2):null;
       const shotText=Number.isFinite(strokes)?`${strokes} Stableford shot${strokes===1?"":"s"}`:"shots pending";
       const detail=Number.isFinite(state.dailyHandicaps[name])?`Daily HCP ${state.dailyHandicaps[name]} · Hole SI ${strokeIndexLabel(hole)} · ${shotText}`:`Daily HCP required · Hole SI ${strokeIndexLabel(hole)} · shots pending`;
-      return stepper(name,name,detail,s[name],!canEdit,stablefordPreview(name,hole,s[name]));
+      const shown=canEdit?scoreDraftValue(hole.n,name,s[name]):s[name];
+      return stepper(name,name,detail,shown,!canEdit,stablefordPreview(name,hole,draftGross(shown)));
     }).join("");
   }
   let result="";
@@ -1162,6 +1187,13 @@ async function saveScoreValues(){
   const autoAdvance=!hadSaved&&h===progressHoleAtStart&&h<18;
   if(manualCourseActive()&&!holeSetupComplete(hole))return toast(`Enter Par and Stroke Index for Manual Hole ${h} first`);
 
+  // Capture the entire active form before any RPC can trigger a Realtime redraw.
+  const scoreKeys=fmt==="scramble"?["bj","is"]:Object.keys(tournament.players);
+  for(const key of scoreKeys){const input=document.getElementById(key);if(input)setScoreDraftValue(h,key,input.value);}
+  for(const key of ["standardSi2Override","ntpWinnerSelect","ntpDistanceInput","longestWinnerSelect"]){
+    const input=document.getElementById(key);if(input)setScoreDraftValue(h,key,input.value);
+  }
+
   let standardSi2Value=null,standardSi2Changed=false;
   if(!manualCourseActive()&&h>=7){
     const raw=document.getElementById("standardSi2Override")?.value.trim()??"";
@@ -1228,6 +1260,8 @@ async function saveScoreValues(){
     toast(`Hole ${h} save could not be confirmed · retry before moving on`);render();return;
   }
 
+  clearScoreFormDraft(h);
+
   if(autoAdvance){
     scoreBrowseHole=h+1;showRecentHoleResult(h);saveLocalState();toast(`Hole ${h} saved · Hole ${h+1} ready`);render();window.scrollTo({top:0,behavior:"smooth"});return;
   }
@@ -1242,6 +1276,7 @@ async function clearHoleScores(){
   const result=await rpcScorerWrite("writer_cup_clear_hole",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_hole_number:h});
   if(!result.ok)return;
   delete state.scores[h];
+  clearScoreFormDraft(h);
   scoreBrowseHole=h;
   saveLocalState();
   await syncFromSupabase({quiet:true});
@@ -1321,12 +1356,19 @@ function bindViewEvents(){
       document.querySelectorAll("[data-step]").forEach(btn=>btn.onclick=()=>{
         const input=document.getElementById(btn.dataset.step),hole=scorePreviewHole(),parsed=Number(input.value),current=Number.isFinite(parsed)?parsed:0;
         input.value=Math.max(0,Math.min(20,current+Number(btn.dataset.delta)));
+        setScoreDraftValue(shownHole(),btn.dataset.step,input.value);
         if(hole.n>=7)refreshStablefordUnderScore(btn.dataset.step,hole);
       });
       if(displayedScoreHole()>=7){
-        Object.keys(tournament.players).forEach(name=>{const input=document.getElementById(name);if(input)input.oninput=()=>refreshStablefordUnderScore(name,scorePreviewHole());});
+        Object.keys(tournament.players).forEach(name=>{const input=document.getElementById(name);if(input)input.oninput=()=>{setScoreDraftValue(shownHole(),name,input.value);refreshStablefordUnderScore(name,scorePreviewHole());};});
         const standardSi2=document.getElementById("standardSi2Override");
-        if(standardSi2)standardSi2.oninput=()=>{const preview=scorePreviewHole();Object.keys(tournament.players).forEach(name=>refreshStablefordUnderScore(name,preview));};
+        if(standardSi2)standardSi2.oninput=()=>{setScoreDraftValue(shownHole(),"standardSi2Override",standardSi2.value);const preview=scorePreviewHole();Object.keys(tournament.players).forEach(name=>refreshStablefordUnderScore(name,preview));};
+      }
+      if(displayedScoreHole()<7){
+        for(const key of ["bj","is"]){const input=document.getElementById(key);if(input)input.oninput=()=>setScoreDraftValue(shownHole(),key,input.value);}
+      }
+      for(const key of ["ntpWinnerSelect","ntpDistanceInput","longestWinnerSelect"]){
+        const input=document.getElementById(key);if(input)input.oninput=()=>setScoreDraftValue(shownHole(),key,input.value);
       }
       const draw=document.getElementById("drawOrder");if(draw)draw.onclick=drawLongestDriveOrder;
       const manualSave=document.getElementById("saveScoreManualHole");if(manualSave)manualSave.onclick=()=>saveManualHoleFromInputs(displayedScoreHole(),{parId:"scoreManualPar",siId:"scoreManualSi",si2Id:"scoreManualSi2",metresId:"scoreManualMetres"});

@@ -31,6 +31,8 @@ const results=ctx.__RESULTS;
 const matchConditions=ctx.rulesView();
 ctx.sessionStorage.setItem('writerCupCourseSetupUnlocked','1');
 const courseSetup=vm.runInContext('manualCourseSetupView()',ctx);
+const indexSource=fs.readFileSync(__dirname+'/index.html','utf8');
+const workerSource=fs.readFileSync(__dirname+'/sw.js','utf8');
 const correctionView=vm.runInContext("state.tournamentStatus='live';state.currentHole=12;scoreBrowseHole=8;scoreView()",ctx);
 const completedScore=vm.runInContext("state.tournamentStatus='complete';state.currentHole=18;scoreBrowseHole=18;scoreView()",ctx);
 const completedCourseSetup=vm.runInContext('manualCourseSetupView()',ctx);
@@ -45,7 +47,10 @@ results.push(
   {name:'Correction view offers return to current hole',ok:correctionView.includes('RETURN TO CURRENT HOLE 12'),detail:''},
   {name:'Completed round replaces score editing with PIN reopen',ok:completedScore.includes('OFFICIAL RESULT · LOCKED')&&completedScore.includes('UNLOCK COMPLETED ROUND')&&!completedScore.includes('id="saveScore"'),detail:''},
   {name:'Completed round protects Course Setup',ok:completedCourseSetup.includes('COMPLETED ROUND LOCKED')&&!completedCourseSetup.includes('activateManualCourse'),detail:''},
-  {name:'Completed round protects Daily Handicaps',ok:completedHandicaps.includes('HANDICAPS LOCKED')&&completedHandicaps.includes('disabled'),detail:''}
+  {name:'Completed round protects Daily Handicaps',ok:completedHandicaps.includes('HANDICAPS LOCKED')&&completedHandicaps.includes('disabled'),detail:''},
+  {name:'Score form protects unsaved entries through background redraws',ok:appCode.includes('scoreFormDrafts')&&appCode.includes('setScoreDraftValue')&&appCode.includes('clearScoreFormDraft'),detail:''},
+  {name:'Final app and styles use cache-busting URLs',ok:indexSource.includes('styles.css?v=8-final-1')&&indexSource.includes('app.js?v=8-final-2'),detail:''},
+  {name:'Service worker cache is refreshed for final V8',ok:workerSource.includes('writer-cup-2026-v8-final-2')&&workerSource.includes('app.js?v=8-final-2'),detail:''}
 );
 const passed=results.filter(x=>x.ok).length;
 for(const t of results) console.log(`${t.ok?'PASS':'FAIL'}  ${t.name}${t.detail?' :: '+t.detail:''}`);

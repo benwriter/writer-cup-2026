@@ -97,6 +97,24 @@ test('normal scoring advances and correction saves stay on the selected hole',as
   }
 });
 
+test('background sync redraw preserves every unsaved score on the active hole',async()=>{
+  const f=fixture({hole:13});
+  f.run(`setScoreDraftValue(13,'Ben','4');setScoreDraftValue(13,'Joel','3');setScoreDraftValue(13,'Dylan','3');setScoreDraftValue(13,'Brent','3')`);
+  await f.run('syncFromSupabase({quiet:true})');
+  const html=f.run('scoreView()');
+  for(const [name,value] of [['Ben','4'],['Joel','3'],['Dylan','3'],['Brent','3']]){
+    assert.match(html,new RegExp(`id="${name}"[^>]*value="${value}"`));
+  }
+});
+
+test('confirmed save clears its form draft while an offline save retains it',async()=>{
+  const confirmed=fixture({hole:13});await confirmed.save();
+  assert.equal(confirmed.run('scoreFormDraft(13)'),null);
+
+  const offline=fixture({hole:13});offline.ctx.navigator.onLine=false;await offline.save();
+  assert.equal(offline.run(`scoreDraftValue(13,'Joel',null)`),'5');
+});
+
 test('auto-advance recap is tailored to Scramble and Aggregate Singles',async()=>{
   const scramble=fixture({hole:1});await scramble.save();
   assert.match(scramble.run('recentHoleResult.title'),/BERKELEY JAIL WIN/);
