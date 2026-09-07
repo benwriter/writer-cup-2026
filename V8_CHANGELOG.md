@@ -79,4 +79,12 @@
 - Failed, offline or unconfirmed saves retain the entries on screen for a safe retry.
 - The installed-app cache advances again so phones and Macs receive this protection after the GitHub deployment.
 
-Validation: `node --check app.js`, all 43 checks in `node test-v6.js`, and all 15 isolated save-flow tests in `node --test test-v8-save.js` pass. These tests use an in-memory database and include 990 ordinary handicap allocations plus split-index thresholds. The Supabase lock also passed a rollback-only integration test covering finalise, blocked edits, PIN reopen, correction and relock; no test rows remained afterward.
+## Active-entry stability
+
+- Once the scorer begins entering a hole, Realtime updates and connectivity changes continue syncing data without rebuilding the visible score form.
+- The ten-second previous-hole recap can expire without shifting the controls while the scorer is tapping.
+- The form refreshes normally after Save, deliberate navigation or leaving the score screen.
+- This prevents a moving button from receiving a tap intended for the previous player's score control.
+- The installed-app cache advances to `v8-final-3` so the stability fix replaces the earlier draft-protection build.
+
+Validation: `node --check app.js`, all 44 checks in `node test-v6.js`, and all 16 isolated save-flow tests in `node --test test-v8-save.js` pass. These tests use an in-memory database and include 990 ordinary handicap allocations plus split-index thresholds. The Supabase lock also passed a rollback-only integration test covering finalise, blocked edits, PIN reopen, correction and relock; no test rows remained afterward.

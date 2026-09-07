@@ -76,6 +76,8 @@ function setScoreDraftValue(holeNumber,key,value){
 }
 function clearScoreFormDraft(holeNumber){delete scoreFormDrafts[holeNumber];}
 function clearAllScoreFormDrafts(){scoreFormDrafts={};}
+function scoreEntryInProgress(){return route==="score"&&Boolean(scoreFormDraft(displayedScoreHole()));}
+function renderAfterBackgroundUpdate(){if(!scoreEntryInProgress())render();}
 function draftGross(value){
   if(value===""||value===null||value===undefined)return undefined;
   const gross=Number(value);return Number.isFinite(gross)?gross:undefined;
@@ -480,12 +482,12 @@ async function syncFromSupabase({quiet=false,fresh=false}={}){
     state.notes=mapNotes(nRes.data);
     state.connection="live";state.lastSync=new Date().toISOString();saveLocalState();
     if(!quiet)toast("Live data synced");
-    render();
+    renderAfterBackgroundUpdate();
     return true;
   }catch(e){
     state.connection=navigator.onLine?"connecting":"offline";saveLocalState();
     if(!quiet)toast("Using offline copy");
-    render();
+    renderAfterBackgroundUpdate();
     return false;
   }
   })();
@@ -505,7 +507,7 @@ function subscribeRealtime(){
     .on("postgres_changes",{event:"*",schema:"public",table:"player_notes",filter:`tournament_id=eq.${CONFIG.TOURNAMENT_ID}`},rerun)
     .on("postgres_changes",{event:"*",schema:"public",table:"course_guide",filter:`tournament_id=eq.${CONFIG.TOURNAMENT_ID}`},rerun)
     .on("postgres_changes",{event:"*",schema:"public",table:"course_settings",filter:`tournament_id=eq.${CONFIG.TOURNAMENT_ID}`},rerun)
-    .subscribe(status=>{if(status==="SUBSCRIBED"){state.connection="live";saveLocalState();render();}});
+    .subscribe(status=>{if(status==="SUBSCRIBED"){state.connection="live";saveLocalState();renderAfterBackgroundUpdate();}});
 }
 
 function pendingWrites(){try{return JSON.parse(localStorage.getItem("writerCupPendingWritesV4")||"[]");}catch{return[];}}
@@ -777,7 +779,7 @@ function showRecentHoleResult(holeNumber){
   clearTimeout(recentHoleResultTimer);
   recentHoleResultTimer=setTimeout(()=>{
     recentHoleResult=null;
-    if(route==="score")render();
+    if(route==="score")renderAfterBackgroundUpdate();
   },10000);
 }
 function dismissRecentHoleResult(){
@@ -1434,7 +1436,7 @@ document.getElementById("moreButton").onclick=()=>navigate("more");
 
 window.addEventListener("keydown",e=>{if(e.key==="Escape")closePhotoModal();});
 window.addEventListener("online",()=>{state.connection="connecting";saveLocalState();syncFromSupabase({quiet:true}).then(flushPendingWrites);loadWeather();});
-window.addEventListener("offline",()=>{state.connection="offline";saveLocalState();render();});
+window.addEventListener("offline",()=>{state.connection="offline";saveLocalState();renderAfterBackgroundUpdate();});
 
 // Older profile-save failures were incorrectly queued as offline writes.
 // Profile text now saves online with explicit verification, so discard only those stale profile writes.

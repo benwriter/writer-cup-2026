@@ -107,6 +107,16 @@ test('background sync redraw preserves every unsaved score on the active hole',a
   }
 });
 
+test('background updates do not rebuild the form while score entry is active',async()=>{
+  const f=fixture({hole:12});
+  f.run(`route='score';var renderCalls=0;render=()=>{renderCalls++};setScoreDraftValue(12,'Dylan','2')`);
+  await f.run('syncFromSupabase({quiet:true})');
+  assert.equal(f.run('renderCalls'),0,'active score entry must not move the visible controls');
+  f.run('clearScoreFormDraft(12)');
+  await f.run('syncFromSupabase({quiet:true})');
+  assert.equal(f.run('renderCalls'),1,'normal background rendering resumes after the draft clears');
+});
+
 test('confirmed save clears its form draft while an offline save retains it',async()=>{
   const confirmed=fixture({hole:13});await confirmed.save();
   assert.equal(confirmed.run('scoreFormDraft(13)'),null);

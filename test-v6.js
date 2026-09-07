@@ -49,8 +49,9 @@ results.push(
   {name:'Completed round protects Course Setup',ok:completedCourseSetup.includes('COMPLETED ROUND LOCKED')&&!completedCourseSetup.includes('activateManualCourse'),detail:''},
   {name:'Completed round protects Daily Handicaps',ok:completedHandicaps.includes('HANDICAPS LOCKED')&&completedHandicaps.includes('disabled'),detail:''},
   {name:'Score form protects unsaved entries through background redraws',ok:appCode.includes('scoreFormDrafts')&&appCode.includes('setScoreDraftValue')&&appCode.includes('clearScoreFormDraft'),detail:''},
-  {name:'Final app and styles use cache-busting URLs',ok:indexSource.includes('styles.css?v=8-final-1')&&indexSource.includes('app.js?v=8-final-2'),detail:''},
-  {name:'Service worker cache is refreshed for final V8',ok:workerSource.includes('writer-cup-2026-v8-final-2')&&workerSource.includes('app.js?v=8-final-2'),detail:''}
+  {name:'Active score entry suppresses background form rebuilds',ok:appCode.includes('scoreEntryInProgress')&&appCode.includes('renderAfterBackgroundUpdate'),detail:''},
+  {name:'Final app and styles use cache-busting URLs',ok:indexSource.includes('styles.css?v=8-final-1')&&indexSource.includes('app.js?v=8-final-3'),detail:''},
+  {name:'Service worker cache is refreshed for final V8',ok:workerSource.includes('writer-cup-2026-v8-final-3')&&workerSource.includes('app.js?v=8-final-3'),detail:''}
 );
 const passed=results.filter(x=>x.ok).length;
 for(const t of results) console.log(`${t.ok?'PASS':'FAIL'}  ${t.name}${t.detail?' :: '+t.detail:''}`);
