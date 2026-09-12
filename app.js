@@ -1094,6 +1094,7 @@ function rulesView(){
       <p><b>Official Writer Cup tees:</b> Official Writer Cup tees will be provided for use until all have been used.</p>
       <p><b>Tequila at the Turn:</b> A ceremonial shot of tequila will take place at the beginning of Hole 10 to officially mark the turn.</p>
       <p><b>Prize presentations:</b> Official prize presentations will take place after the match.</p>
+      <p><b>Tee Trivia:</b> The player who finishes last in Tee Trivia buys a round of beverages for all four players after the match. Trivia results do not affect Writer Cup points.</p>
       <p>White Tees throughout. No gimmies. R&amp;A Rules of Golf and The Coast Golf Club Local Rules apply unless specifically modified by Writer Cup rules.</p>
       <div class="rule-callout"><b>The Coast Local Rules</b><br>The Coast publishes current course conditions, out-of-bounds definitions, penalty-area markings, relief procedures, drop zones and temporary Local Rules. Key course-specific items include the 7th, 16th and 18th drop-zone provisions and the 12th-hole ventilation-pipe replay rule. Conditions and temporary Local Rules can change, so check the official page on the day.</div>
       <a class="secondary-button link-button" href="https://www.coastgolf.com.au/cms/play/local-rules-course-conditions/" target="_blank" rel="noopener">VIEW THE COAST LOCAL RULES ↗</a>
