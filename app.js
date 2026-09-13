@@ -1066,6 +1066,21 @@ function sponsorsView(){
     <button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
 }
 
+function aboutCoastView(){
+  return `<details class="card rule-card">
+    <summary><strong>🌊 About The Coast</strong></summary>
+    <div class="rule-kicker">THE WRITER CUP VENUE</div>
+    <h2>A course with a story</h2>
+    <p>The Coast Golf Club sits beside the ocean at Little Bay in Sydney. Its official address is <b>1 Coast Hospital Road, Little Bay NSW 2036</b>.</p>
+    <p><b>The neighbours:</b> St Michael’s Golf Club and Randwick Golf Club flank The Coast. New South Wales Golf Club is also nearby, but is not one of those two immediate golfing neighbours.</p>
+    <p><b>From hospital grounds to golf club:</b> The Coast Golf &amp; Recreation Club officially opened in <b>May 1965</b>. Sir John Marks, Chairman of the Board of Prince Henry Hospital, performed the opening.</p>
+    <p>The old hospital <b>laundry</b> was designated to become the club’s licensed premises. Renovations in 1969 filled in the original U-shaped building to create a function room. Quite a change from laundry duty to the nineteenth hole.</p>
+    <p>Brent helped bring the 2026 Writer Cup here through Shelly Beach’s reciprocal relationship. Enjoy the coastal setting, brush up on the club’s story, and keep the wind complaints ready for Brent.</p>
+    <p><small>This is background information about The Coast, not the active round’s course setup. Use Course Setup and the current official scorecard to confirm the day’s routing, pars and indexes.</small></p>
+    <p><a class="secondary-button link-button" href="https://www.coastgolf.com.au/cms/about-us/" target="_blank" rel="noopener">OFFICIAL CLUB HISTORY ↗</a></p>
+    <p><small>Sources: <a href="https://www.coastgolf.com.au/cms/" target="_blank" rel="noopener">The Coast Golf Club</a> and <a href="https://www.where2golf.com/australia/the-coast-golf-club/" target="_blank" rel="noopener">Where2Golf’s neighbouring-club guide</a>.</small></p>
+  </details>`;
+}
 function moreView(){
   return `<div class="page-heading"><div class="eyebrow">Writer Cup HQ · ${connectionLabel()}</div><h1>Tournament HQ</h1><p>Profiles, scorecard, rules and tournament settings.</p></div>
     ${devicePlayerPanel()}${handicapsPanel()}
@@ -1079,7 +1094,8 @@ function moreView(){
       <button data-action="weather"><span><strong>🌬️ Refresh Weather</strong><small>Tournament-week Little Bay forecast</small></span><span>›</span></button>
       <button data-action="refresh"><span><strong>↻ Refresh Live Data</strong><small>Pull latest Supabase data</small></span><span>›</span></button>
       <button data-action="lock"><span><strong>🔒 Lock Scorer Mode</strong><small>Forget scorer PIN on this device</small></span><span>›</span></button>
-    </section>`;
+    </section>
+    ${aboutCoastView()}`;
 }
 function rulesView(){
   return `<div class="page-heading"><div class="eyebrow">Official Match Rules</div><h1>Writer Cup 2026</h1><p>18 holes · 4 Writer Cup points.</p></div>
