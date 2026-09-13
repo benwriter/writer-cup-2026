@@ -1067,19 +1067,17 @@ function sponsorsView(){
 }
 
 function aboutCoastView(){
-  return `<details class="card rule-card">
-    <summary><strong>🌊 About The Coast</strong></summary>
-    <div class="rule-kicker">THE WRITER CUP VENUE</div>
-    <h2>A course with a story</h2>
-    <p>The Coast Golf Club sits beside the ocean at Little Bay in Sydney. Its official address is <b>1 Coast Hospital Road, Little Bay NSW 2036</b>.</p>
-    <p><b>The neighbours:</b> St Michael’s Golf Club and Randwick Golf Club flank The Coast. New South Wales Golf Club is also nearby, but is not one of those two immediate golfing neighbours.</p>
-    <p><b>From hospital grounds to golf club:</b> The Coast Golf &amp; Recreation Club officially opened in <b>May 1965</b>. Sir John Marks, Chairman of the Board of Prince Henry Hospital, performed the opening.</p>
-    <p>The old hospital <b>laundry</b> was designated to become the club’s licensed premises. Renovations in 1969 filled in the original U-shaped building to create a function room. Quite a change from laundry duty to the nineteenth hole.</p>
+  return `<div class="page-heading"><div class="eyebrow">The Writer Cup venue</div><h1>About The Coast</h1><p>A course with a story.</p></div>
+    <section class="card rule-card">
+    <p>The Coast Golf Club sits beside the ocean at Little Bay in Sydney. Its official address is 1 Coast Hospital Road, Little Bay NSW 2036.</p>
+    <p>St Michael’s Golf Club and Randwick Golf Club flank The Coast. New South Wales Golf Club is also nearby, but is not one of those two immediate golfing neighbours.</p>
+    <p>The Coast Golf &amp; Recreation Club officially opened in May 1965. Sir John Marks, Chairman of the Board of Prince Henry Hospital, performed the opening.</p>
+    <p>The old hospital laundry was designated to become the club’s licensed premises. Renovations in 1969 filled in the original U-shaped building to create a function room. Quite a change from laundry duty to the nineteenth hole.</p>
     <p>Brent helped bring the 2026 Writer Cup here through Shelly Beach’s reciprocal relationship. Enjoy the coastal setting, brush up on the club’s story, and keep the wind complaints ready for Brent.</p>
     <p><small>This is background information about The Coast, not the active round’s course setup. Use Course Setup and the current official scorecard to confirm the day’s routing, pars and indexes.</small></p>
     <p><a class="secondary-button link-button" href="https://www.coastgolf.com.au/cms/about-us/" target="_blank" rel="noopener">OFFICIAL CLUB HISTORY ↗</a></p>
     <p><small>Sources: <a href="https://www.coastgolf.com.au/cms/" target="_blank" rel="noopener">The Coast Golf Club</a> and <a href="https://www.where2golf.com/australia/the-coast-golf-club/" target="_blank" rel="noopener">Where2Golf’s neighbouring-club guide</a>.</small></p>
-  </details>`;
+  </section><button class="secondary-button" data-route="more">BACK</button>`;
 }
 function moreView(){
   return `<div class="page-heading"><div class="eyebrow">Writer Cup HQ · ${connectionLabel()}</div><h1>Tournament HQ</h1><p>Profiles, scorecard, rules and tournament settings.</p></div>
@@ -1087,6 +1085,7 @@ function moreView(){
     <div class="section-title"><h2>Honours</h2><span>2026 side competitions</span></div><div class="sidegame-grid"><section class="card sidegame"><strong>🎯 Hole ${ntpHoleNumber()} · Nearest to the Pin</strong><div class="winner">${escapeHTML(state.sideGames.ntpWinner||"Not decided")}</div><small>${escapeHTML(state.sideGames.ntpDistance||"Ball must finish on the green")}</small></section><section class="card sidegame"><strong>🚀 Hole ${longestDriveHoleNumber()} · Longest Drive</strong><div class="winner">${escapeHTML(state.sideGames.longestWinner||"Not decided")}</div><small>${state.sideGames.driveOrder.length?`Order: ${state.sideGames.driveOrder.map(displayNameForKey).join(" · ")}`:"Ball must finish on the fairway"}</small></section></div>
     <div class="section-title"><h2>Tournament</h2><span>Writer Cup 2026</span></div><section class="card menu-list">
       <button data-action="courseSetup"><span><strong>🛠️ Course Setup</strong><small>Standard or Manual emergency course</small></span><span>›</span></button>
+      <button data-action="aboutCoast"><span><strong>🌊 About The Coast</strong><small>Location, neighbours and club history</small></span><span>›</span></button>
       <button data-action="players"><span><strong>🏌️ Player Profiles</strong><small>Photos, bios, stats and notes</small></span><span>›</span></button>
       <button data-action="card"><span><strong>▦ Full Scorecard</strong><small>All 18 holes and indexes</small></span><span>›</span></button>
       <button data-action="rules"><span><strong>📜 Official Match Rules</strong><small>Formats, honours and Cup scoring</small></span><span>›</span></button>
@@ -1094,8 +1093,7 @@ function moreView(){
       <button data-action="weather"><span><strong>🌬️ Refresh Weather</strong><small>Tournament-week Little Bay forecast</small></span><span>›</span></button>
       <button data-action="refresh"><span><strong>↻ Refresh Live Data</strong><small>Pull latest Supabase data</small></span><span>›</span></button>
       <button data-action="lock"><span><strong>🔒 Lock Scorer Mode</strong><small>Forget scorer PIN on this device</small></span><span>›</span></button>
-    </section>
-    ${aboutCoastView()}`;
+    </section>`;
 }
 function rulesView(){
   return `<div class="page-heading"><div class="eyebrow">Official Match Rules</div><h1>Writer Cup 2026</h1><p>18 holes · 4 Writer Cup points.</p></div>
@@ -1121,10 +1119,10 @@ function rulesView(){
 }
 function render(){
   const app=document.getElementById("app");
-  const view=route==="home"?homeView():route==="live"?liveView():route==="score"?scoreView():route==="course"?courseView():route==="hole"?holeView():route==="players"?playersView():route==="player"?playerView():route==="profileEdit"?profileEditView():route==="card"?scorecardView():route==="courseSetup"?manualCourseSetupView():route==="rules"?rulesView():route==="sponsors"?sponsorsView():moreView();
+  const view=route==="home"?homeView():route==="live"?liveView():route==="score"?scoreView():route==="course"?courseView():route==="hole"?holeView():route==="players"?playersView():route==="player"?playerView():route==="profileEdit"?profileEditView():route==="card"?scorecardView():route==="courseSetup"?manualCourseSetupView():route==="rules"?rulesView():route==="sponsors"?sponsorsView():route==="aboutCoast"?aboutCoastView():moreView();
   app.innerHTML=`${manualModeBanner()}${view}`;
   document.querySelectorAll(".nav-item").forEach(b=>{
-    const active=(route==="hole"&&b.dataset.route==="course")||(route==="player"||route==="profileEdit"||route==="card"||route==="courseSetup"||route==="rules"||route==="sponsors")&&b.dataset.route==="more"||b.dataset.route===route;
+    const active=(route==="hole"&&b.dataset.route==="course")||(route==="player"||route==="profileEdit"||route==="card"||route==="courseSetup"||route==="rules"||route==="sponsors"||route==="aboutCoast")&&b.dataset.route==="more"||b.dataset.route===route;
     b.classList.toggle("active",active);
   });
   bindViewEvents();
@@ -1442,7 +1440,7 @@ function bindViewEvents(){
       if(result.ok){Object.keys(tournament.players).forEach(n=>state.dailyHandicaps[n]=values[tournament.players[n].id]);saveLocalState();toast("Daily Handicaps saved live");render();}
     };
     document.querySelectorAll("[data-action]").forEach(b=>b.onclick=()=>{
-      const a=b.dataset.action;if(a==="courseSetup")navigate("courseSetup");if(a==="players")navigate("players");if(a==="card")navigate("card");if(a==="rules")navigate("rules");if(a==="sponsors")navigate("sponsors");if(a==="refresh")syncFromSupabase();if(a==="weather"){state.weather={status:"loading"};render();loadWeather({force:true});}if(a==="lock"){clearScorerPin();toast("Scorer mode locked");}
+      const a=b.dataset.action;if(a==="aboutCoast")navigate("aboutCoast");if(a==="courseSetup")navigate("courseSetup");if(a==="players")navigate("players");if(a==="card")navigate("card");if(a==="rules")navigate("rules");if(a==="sponsors")navigate("sponsors");if(a==="refresh")syncFromSupabase();if(a==="weather"){state.weather={status:"loading"};render();loadWeather({force:true});}if(a==="lock"){clearScorerPin();toast("Scorer mode locked");}
     });
   }
 }
