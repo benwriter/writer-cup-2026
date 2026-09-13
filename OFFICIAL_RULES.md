@@ -53,6 +53,7 @@ The official 1–4 hitting order is randomly drawn before teeing off. Normal Sin
 - No playoff.
 
 ## General Rules
+- **Departure:** Depart Ben’s place at 5:00am sharp, with a stop at Guzman y Gomez for breakfast and coffee. Aim to return by 14:00 (2:00pm).
 - White Tees are used throughout.
 - Itchy & Scratchy wear **dark shirts**.
 - Berkeley Jail wear **light shirts**.

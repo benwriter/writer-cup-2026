@@ -19,5 +19,5 @@ test('HTML and offline cache use the same new app version',()=>{
   const sw=fs.readFileSync(__dirname+'/sw.js','utf8');
   const app=html.match(/\.\/app\.js\?v=[^" ]+/)[0];
   assert.ok(sw.includes(app));
-  assert.ok(sw.includes('writer-cup-2026-v8-final-6'));
+  assert.ok(sw.includes('writer-cup-2026-v8-final-7'));
 });

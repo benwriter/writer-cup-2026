@@ -1060,7 +1060,7 @@ function manualCourseSetupView(){
     <button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
 }
 function sponsorsView(){
-  const sponsors=["TEMU","2 P’s On A Pod Podcast","Shell Petroleum","Guzman y Gomez","Srixon","Titleist","LSKD","Wesley Mission","Tri-Lite Golf Buggies","The Coast Golf & Recreation Club","Hahn Beer"];
+  const sponsors=["TEMU","2 P’s On A Pod Podcast","AMPOL","Guzman y Gomez","Srixon","Titleist","LSKD","Wesley Mission","Tri-Lite Golf Buggies","The Coast Golf & Recreation Club","Hahn Beer"];
   return `<div class="page-heading"><div class="eyebrow">Writer Cup 2026</div><h1>Sponsors &amp; Partners</h1><p>The organisations helping keep the Writer Cup unnecessarily professional.</p></div>
     <section class="sponsor-grid">${sponsors.map((name,i)=>`<div class="card sponsor-card"><span>${String(i+1).padStart(2,"0")}</span><strong>${escapeHTML(name)}</strong></div>`).join("")}</section>
     <button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
@@ -1102,6 +1102,7 @@ function rulesView(){
     <section class="card rule-card"><div class="rule-kicker">HOLES 13–18 · 2 POINTS</div><h2>Singles · Aggregate Stableford</h2><p>The pairings remain Ben v Dylan and Joel v Brent. Each player plays their own ball using their official Daily Handicap and the White Tee stroke index.</p><p>Stableford points <b>accumulate across all six holes</b>. There are no individual hole wins in Singles. After Hole 18, the higher six-hole Stableford total wins that Singles match and 1 Writer Cup point. Equal aggregate totals halve the match for ½ point each.</p><div class="rule-callout"><b>Hole ${longestDriveHoleNumber()} · Longest Drive</b><br>The official 1–4 hitting order is randomly drawn before teeing off on the selected Longest Drive hole. Normal Writer Cup tee balls remain live. The ball must finish on the fairway to qualify. If nobody finds the fairway, nobody wins.</div></section>
     <section class="card rule-card"><div class="rule-kicker">THE CUP</div><h2>4 points available</h2><p>2½ points wins outright. Berkeley Jail retain with 2 points. Itchy &amp; Scratchy need 2½ to take possession. A 2–2 final is an official draw and Berkeley Jail retain. No countback. No playoff.</p></section>
     <section class="card rule-card"><div class="rule-kicker">GENERAL</div><h2>Match conditions</h2>
+      <p><b>Departure:</b> Depart Ben’s place at 5:00am sharp, with a stop at Guzman y Gomez for breakfast and coffee. Aim to return by 14:00 (2:00pm).</p>
       <p><b>Team colours:</b> Itchy &amp; Scratchy wear dark shirts. Berkeley Jail wear light shirts.</p>
       <p><b>Walking only:</b> No carts this year. All four players will walk the full 18 holes. This decision has been made partly in response to the mechanical reliability displayed by last year’s cart, which famously gave up around Hole 2. Push buggies are strongly encouraged. Calves, hamstrings and general morale should be prepared accordingly.</p>
       <p><b>Official player gifts:</b> An official Writer Cup gift will be presented to each player on the morning of the tournament.</p>
