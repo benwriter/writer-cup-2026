@@ -354,8 +354,21 @@ function compass(deg){
   return dirs[Math.round(deg/45)%8];
 }
 function daysUntilEvent(){
-  const target=new Date("2026-09-24T12:00:00+10:00");
+  const target=new Date(tournament.date);
   return Math.ceil((target-new Date())/86400000);
+}
+
+let weatherUnlockPending=false;
+let weatherUnlockLastAttempt=-Infinity;
+function refreshWeatherAtUnlock(){
+  // Only refresh the Home card. Never redraw active score entry.
+  if(route!=="home" || document.hidden || weatherUnlockPending || state.weather?.status!=="locked")return;
+  const days=daysUntilEvent();
+  if(days>7)return;
+  if(Date.now()-weatherUnlockLastAttempt<60000)return;
+  weatherUnlockLastAttempt=Date.now();
+  weatherUnlockPending=true;
+  return loadWeather().finally(()=>{weatherUnlockPending=false;});
 }
 
 async function loadWeather({force=false}={}) {
@@ -1453,6 +1466,8 @@ document.getElementById("moreButton").onclick=()=>navigate("more");
 window.addEventListener("keydown",e=>{if(e.key==="Escape")closePhotoModal();});
 window.addEventListener("online",()=>{state.connection="connecting";saveLocalState();syncFromSupabase({quiet:true}).then(flushPendingWrites);loadWeather();});
 window.addEventListener("offline",()=>{state.connection="offline";saveLocalState();renderAfterBackgroundUpdate();});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshWeatherAtUnlock();});
+setInterval(refreshWeatherAtUnlock,1000);
 
 // Older profile-save failures were incorrectly queued as offline writes.
 // Profile text now saves online with explicit verification, so discard only those stale profile writes.
