@@ -360,7 +360,9 @@ html, body { background:#F7F7F3; color:#001638; }
 body { background:linear-gradient(180deg,#FBFBF8 0%,#F7F7F3 100%); }
 .app-shell { background:#F7F7F3; }
 .topbar {
-  background:rgba(255,255,255,.94);
+  background:#FFFFFF;
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
   border-bottom:1px solid rgba(0,22,56,.10);
   box-shadow:0 3px 18px rgba(0,22,56,.04);
 }
