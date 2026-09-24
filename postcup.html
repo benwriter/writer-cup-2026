@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#001638"><title>Writer Cup · History</title><link rel="stylesheet" href="./postcup.css?v=9-2"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#001638"><title>Writer Cup · History</title><link rel="stylesheet" href="./postcup.css?v=9-ai-1"></head>
 <body><header><a href="./">← Writer Cup</a><span>THE CLUBHOUSE</span></header><main>
 <p class="eyebrow">THE RESULTS. THE STORIES. THE EVIDENCE.</p><h1>Writer Cup history</h1><p>Every Cup gets its own scorecard and memories.</p>
 <label>Choose a Cup <select id="archiveSelect" aria-label="Choose archived Cup"></select></label>
@@ -8,10 +8,10 @@
 <section class="card" id="albumSection"><p class="eyebrow">THE DAY IN PICTURES</p><h2>Photo album</h2><p>Photos and captions are visible to everyone with the app.</p><div id="album" class="album"></div></section>
 <section class="card controls"><h2>Captain’s desk</h2><p>Enter the scorer PIN to create or edit the email draft, upload photos or remove them.</p><form id="unlockForm"><label>Scorer PIN<input id="pin" type="password" inputmode="numeric" autocomplete="off" minlength="4" maxlength="6" required></label><button>UNLOCK</button></form><button id="lock" hidden>LOCK CAPTAIN’S DESK</button>
 <div id="editor" hidden>
-<h3>Email wrap-up</h3><p>A short recap with the result, a few highlights and your weather and stories. No biographies or full statistical breakdown. This version uses a fixed writing template and keeps your story wording, so write the details as you want them told. Edit the draft before sharing. Nothing is sent automatically.</p>
+<h3>Email wrap-up</h3><p>A short recap with the result, a few highlights and your weather and stories. No biographies or full statistical breakdown. AI turns your rough notes into a lively recap. The result summary, weather and stories are sent to the AI provider through Vercel; biographies and your PIN are excluded. Edit the draft before sharing. Nothing is sent automatically.</p>
 <label>Weather you experienced<textarea id="weather" maxlength="2000" placeholder="Your recollection of conditions on the day"></textarea></label>
 <label>Stories, quotes and moments<textarea id="stories" maxlength="8000" placeholder="Add the details you want included"></textarea></label>
 <button id="generate">GENERATE DRAFT</button><label>Editable email draft<textarea id="draft" maxlength="60000" rows="22"></textarea></label>
 <button id="saveDraft">SAVE DRAFT</button><button id="copyDraft">COPY FOR EMAIL</button><button id="downloadDraft">DOWNLOAD EMAIL TEXT</button>
 <h3>Add a photo</h3><label>Photo<input id="photo" type="file" accept="image/*"></label><label>Caption<input id="caption" maxlength="500"></label><button id="upload">UPLOAD PHOTO</button><p>Photos are resized for the album. Keep your original images separately.</p>
-</div></section></main><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.js"></script><script src="./config.js"></script><script src="./postcup-model.js?v=9-2"></script><script src="./postcup.js?v=9-2"></script></body></html>
+</div></section></main><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.js"></script><script src="./config.js"></script><script src="./postcup-model.js?v=9-ai-1"></script><script src="./postcup.js?v=9-ai-1"></script></body></html>
