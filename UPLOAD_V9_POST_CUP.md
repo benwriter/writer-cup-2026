@@ -12,7 +12,7 @@ Supabase changes and the completed 2026 archive have already been applied and ve
 - Live hole numbers and expandable six-hole scores/results. Singles displays points and clearly states aggregate totals decide the match.
 - Separate immutable archive containing the final scores, Manual Course, indexes, handicaps, profiles, notes and side competitions.
 - Print/Save as PDF and JSON download for the archived round.
-- PIN-protected editable report generator, saved draft, copy and text download. A fact-based template uses archived results, profiles, notes and photo captions. Add actual weather and stories yourself. This is not an AI service and does not send emails.
+- PIN-protected editable report generator, saved draft, copy and text download. A short recap template uses the result, a few highlights and honours, plus your weather and stories. Biographies, full statistics, raw notes and photo-caption lists are excluded. It keeps your supplied story wording rather than using AI to rewrite it. This is not an AI service and does not send emails.
 - Public photo album with PIN-protected uploading and deleting, captions and enlarged view. Resized JPEG images; maximum 100 photos per archived Cup. Keep originals separately.
 
 ## Verification

@@ -24,18 +24,24 @@
   function generateReport(s,extras={}){
     const a=analyse(s);if(!a.complete)throw Error('Archive contains incomplete scores');
     const outcome=a.bj>a.is?'Berkeley Jail won outright':a.is>a.bj?'Itchy & Scratchy won outright':'The Cup finished level, with Berkeley Jail retaining';
-    const lines=[`Subject: ${s.tournament.name} | ${a.bj}–${a.is} | Bragging rights secured`,'','What. A. Day.','',`${a.course}, ${a.tee} tees. ${outcome}, ${a.bj}–${a.is}. The trophy has a home and the group chat has fresh material.`, '', 'THE FOUR CUP POINTS'];
-    a.matches.forEach((m,i)=>lines.push(i<2?`${m.title}: ${m.a} holes to Berkeley Jail, ${m.b} to Itchy & Scratchy, ${6-m.a-m.b} halved. Cup points ${m.bj}–${m.is}.`:`${m.title}: ${m.a}–${m.b} Stableford points. Cup points ${m.bj}–${m.is}.`));
-    lines.push('','HOW IT UNFOLDED');a.matches.slice(0,2).forEach(m=>lines.push(`${m.title}: `+m.rows.map(r=>`H${r.hole} ${r.a}–${r.b} (${r.winner==='halved'?'halved':r.winner==='bj'?'Berkeley Jail':'Itchy & Scratchy'})`).join('; ')+'.'));
-    lines.push('','THE PLAYERS');a.stats.forEach(p=>{const h=s.daily_handicaps.find(h=>h.player_id===p.id);lines.push(`${p.name}: ${p.points} Stableford points across Holes 7–18; ${p.pars} pars; ${p.birdies} birdies or better; Daily Handicap ${h?.daily_handicap??'not recorded'}.`);if(p.pickups)lines.push(`${p.pickups} explicit pick-up${p.pickups===1?'':'s'}, for zero points. Even the scorecard gets to say “enough”.`);});
-    lines.push('','THE HONOURS');(s.side_competitions||[]).forEach(c=>lines.push(`${c.competition_type==='ntp'?'Nearest to the Pin':'Longest Drive'} (Hole ${c.hole_number}): ${c.winner_player_id?name(c.winner_player_id):c.result_text?'No winner':'Not recorded'}${c.result_text?' · '+c.result_text:''}.`));
-    if((s.side_competitions||[]).some(c=>c.competition_type==='longest_drive'&&!c.winner_player_id&&c.result_text))lines.push('The Longest Drive prize survived the day unclaimed. Distance was only half the job.');
-    lines.push('','CONDITIONS',extras.weather?.trim()||'Actual on-course weather was not recorded. Add your recollection before sharing.');
-    lines.push('','FROM THE NOTEBOOK');if(s.player_notes?.length)s.player_notes.forEach(n=>lines.push(`${name(n.player_id)}${n.hole_number?' · Hole '+n.hole_number:''}: ${n.note_text}`));else lines.push('No player notes were saved.');
-    if(extras.stories?.trim())lines.push('', 'YOUR STORIES',extras.stories.trim());
-    if(extras.captions?.length)lines.push('','PHOTO CAPTIONS',...extras.captions);
-    lines.push('','THE CAST · PROFILE BACKGROUND');(s.players||[]).forEach(p=>lines.push(`${p.display_name}${p.profile_title?' · '+p.profile_title:''}`,p.bio||'No biography saved.',''));
-    lines.push('The scorecard is official. The excuses remain subject to peer review.','', 'EDITOR NOTE: Review and trim this draft before sharing. Profiles are background, not events witnessed today. Some 2026 zero-point entries represent unidentified pick-ups, so no gross round totals or worst-hole claims are made. Weather and extra stories are supplied by the editor.');
+    const sentences=text=>String(text||'').trim().split(/\n+/).map(t=>t.trim()).filter(Boolean).map(t=>/[.!?…]$/.test(t)?t:t+'.').join(' ');
+    const lines=[`Subject: ${s.tournament.name} | Bragging rights secured`,'','What. A. Day.','',`${a.course} was the setting. ${outcome}, ${a.bj}–${a.is}. The trophy has a home and the group chat has fresh material.`];
+    if(extras.weather?.trim())lines.push('',sentences(extras.weather));
+    const formats=a.matches.map((m,i)=>{
+      const winner=m.bj===m.is?null:m.bj>m.is?(m.names?.[0]||'Berkeley Jail'):(m.names?.[1]||'Itchy & Scratchy');
+      if(i<2)return winner?`${winner} took the ${i===0?'Scramble':'Combined Stableford'}`:`The ${i===0?'Scramble':'Combined Stableford'} finished level`;
+      return winner?`${winner} won ${m.title}, ${Math.max(m.a,m.b)}–${Math.min(m.a,m.b)} on points`:`${m.title} finished level`;
+    });
+    lines.push('',formats.join('. ')+'.');
+    const standout=[...a.stats].sort((x,y)=>y.birdies-x.birdies||y.pars-x.pars)[0];
+    if(standout?.birdies)lines.push('',`${standout.name} supplied ${standout.birdies===1?'a birdie-or-better highlight':standout.birdies+' birdie-or-better highlights'} across the individual scoring holes. A useful reminder that there was some golf happening between the banter.`);
+    if(extras.stories?.trim())lines.push('',sentences(extras.stories));
+    const honours=(s.side_competitions||[]).filter(c=>c.winner_player_id||c.result_text).map(c=>{
+      const title=c.competition_type==='ntp'?'Nearest to the Pin':'Longest Drive';
+      return c.winner_player_id?`${name(c.winner_player_id)} claimed ${title}${c.result_text?' ('+c.result_text+')':''}.`:`${title} went unclaimed${c.result_text?': '+c.result_text:'.'}${c.result_text&&!/[.!?]$/.test(c.result_text)?'.':''}`;
+    });
+    if(honours.length)lines.push('',honours.join(' '));
+    lines.push('','The scorecard is official. The excuses remain subject to peer review. Until the next Writer Cup, enjoy the bragging rights.');
     return lines.join('\n');
   }
   return {analyse,generateReport,name};
