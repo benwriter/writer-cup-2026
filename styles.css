@@ -156,6 +156,13 @@ button { cursor: pointer; }
 .segment-head span { color: var(--muted); font-size: .75rem; }
 .segment-status { margin-top: 10px; color: var(--gold-light); font-size: 1.15rem; font-weight: 900; }
 .progress { display: flex; gap: 4px; margin-top: 12px; }
+.hole-progress { flex:1; min-width:0; text-align:center; }
+.hole-progress small { display:block; font-size:.7rem; margin-top:5px; color:var(--muted); }
+.hole-breakdown { margin-top:16px; }
+.hole-breakdown summary { cursor:pointer; font-weight:700; padding:10px 0; }
+.hole-breakdown table { width:100%; border-collapse:collapse; font-size:.8rem; }
+.hole-breakdown td,.hole-breakdown th { padding:9px 6px; text-align:left; border-bottom:1px solid var(--line); }
+.pickup-button { margin:0 0 12px auto; font-size:.8rem; }
 .progress i { display: block; height: 6px; flex: 1; border-radius: 99px; background: rgba(255,255,255,.08); }
 .progress i.bj { background: #c79b35; }
 .progress i.is { background: #6d829a; }
