@@ -1,7 +1,7 @@
 {
-  "name": "Writer Cup 2026",
+  "name": "Writer Cup",
   "short_name": "Writer Cup",
-  "description": "Writer Cup 2026 live scoring and tournament centre.",
+  "description": "Writer Cup live scoring and tournament centre.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#F7F7F3",

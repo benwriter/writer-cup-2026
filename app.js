@@ -1,9 +1,31 @@
-// WRITER CUP V8 · SMART SCORING FLOW + STANDARD SPLIT INDEX OVERRIDES · 2026-09-03
-// V8 auto-advances normal scoring, keeps corrections in place, and supports optional Standard Course 2ND SI overrides.
+// WRITER CUP V10 · YEARLY EVENTS · FROZEN ARCHIVE · FLEXIBLE COURSE
 
 const CONFIG = window.WRITER_CUP_CONFIG;
 const DATA = window.WRITER_CUP_DATA;
 const tournament = DATA.tournament;
+const previouslySelectedEvent=localStorage.getItem("writerCupActiveEventId");
+if(previouslySelectedEvent)CONFIG.TOURNAMENT_ID=previouslySelectedEvent;
+let eventContent={};
+try{const cached=JSON.parse(localStorage.getItem(`writerCupEventMeta:${CONFIG.TOURNAMENT_ID}`)||'null');if(cached){Object.assign(tournament,cached.tournament);eventContent=cached.content||{};}}catch{}
+function eventYear(){return Number(tournament.eventDate?.slice(0,4)||2026);}
+function isLegacyCup(){return CONFIG.TOURNAMENT_ID==='writer-cup-2026';}
+function updateEventHeading(){
+  const label=document.querySelector('.topbar-copy span');if(label)label.textContent=`${tournament.eventDate||'Date TBC'} · ${tournament.venue||'Course TBC'}`;
+  document.title=`${tournament.name||'Writer Cup'} · Writer Cup`;
+}
+function applyEventMetadata(t,c,holes,players,teams){
+  if(!t?.event_date)return;
+  tournament.name=t.name;tournament.eventDate=t.event_date;tournament.venue=t.venue;tournament.tees=t.tee;
+  tournament.date=c?.tee_off_at||`${t.event_date}T07:00:00+10:00`;
+  tournament.coordinates=c?.latitude!=null&&c?.longitude!=null?{lat:c.latitude,lon:c.longitude}:null;
+  eventContent=c||{};
+  if(Array.isArray(holes)&&holes.length===18)tournament.holes=holes.map(h=>({n:h.hole_number,par:h.par,si:h.stroke_index,m:h.metres})).sort((a,b)=>a.n-b.n);
+  if(Array.isArray(teams)&&teams.length===2){for(const row of teams){const key=row.id==='berkeley-jail'?'bj':'is';tournament.teams[key]={...(tournament.teams[key]||{}),id:row.id,name:row.name};}}
+  if(Array.isArray(players)&&players.length===4){for(const row of players){const key=row.id[0].toUpperCase()+row.id.slice(1);if(tournament.players[key])Object.assign(tournament.players[key],{full_name:row.display_name,initials:row.initials,team:row.team_id==='berkeley-jail'?'bj':'is'});}}
+  localStorage.setItem(`writerCupEventMeta:${CONFIG.TOURNAMENT_ID}`,JSON.stringify({tournament,content:eventContent}));
+  updateEventHeading();
+}
+
 
 const db = window.supabase
   ? window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_PUBLISHABLE_KEY, {
@@ -94,18 +116,19 @@ function deepMerge(base, extra) {
 }
 function loadState() {
   try {
-    const saved = JSON.parse(localStorage.getItem("writerCup2026v4"));
+    const saved = JSON.parse(localStorage.getItem(CONFIG.TOURNAMENT_ID==="writer-cup-2026"?"writerCup2026v4":`writerCupStateV10:${CONFIG.TOURNAMENT_ID}`));
     return deepMerge(structuredClone(initialState), saved || {});
   } catch { return structuredClone(initialState); }
 }
 function saveLocalState() {
-  localStorage.setItem("writerCup2026v4", JSON.stringify(state));
+  localStorage.setItem(CONFIG.TOURNAMENT_ID==="writer-cup-2026"?"writerCup2026v4":`writerCupStateV10:${CONFIG.TOURNAMENT_ID}`, JSON.stringify(state));
 }
 function devicePlayerId() { return localStorage.getItem("writerCupDevicePlayer") || ""; }
 function setDevicePlayerId(id) { id ? localStorage.setItem("writerCupDevicePlayer", id) : localStorage.removeItem("writerCupDevicePlayer"); }
-function scorerPin() { return sessionStorage.getItem("writerCupScorerPin") || ""; }
-function setScorerPin(pin) { sessionStorage.setItem("writerCupScorerPin", pin); }
+function scorerPin() { return sessionStorage.getItem(`writerCupScorerPin:${CONFIG.TOURNAMENT_ID}`) || (isLegacyCup()?sessionStorage.getItem("writerCupScorerPin"):"") || ""; }
+function setScorerPin(pin) { sessionStorage.setItem(`writerCupScorerPin:${CONFIG.TOURNAMENT_ID}`, pin); }
 function clearScorerPin() {
+  sessionStorage.removeItem(`writerCupScorerPin:${CONFIG.TOURNAMENT_ID}`);
   sessionStorage.removeItem("writerCupScorerPin");
   sessionStorage.removeItem("writerCupCourseSetupUnlocked");
 }
@@ -164,10 +187,10 @@ function activeHole(hole){
 }
 function activeHoles(){return Array.from({length:18},(_,i)=>activeHole(i+1));}
 function holeSetupComplete(hole){return Number.isFinite(hole?.par)&&Number.isFinite(hole?.si);}
-function ntpHoleNumber(){return manualCourseActive()?Number(state.courseSettings?.ntpHole||4):4;}
-function longestDriveHoleNumber(){return manualCourseActive()?Number(state.courseSettings?.longestDriveHole||14):14;}
-function activeCourseName(){return manualCourseActive()?(state.courseSettings?.courseName||"Manual Course"):"The Coast";}
-function activeTeeName(){return manualCourseActive()?(state.courseSettings?.tee||"Tee not set"):"White Tees";}
+function ntpHoleNumber(){return Number(state.courseSettings?.ntpHole||4);}
+function longestDriveHoleNumber(){return Number(state.courseSettings?.longestDriveHole||14);}
+function activeCourseName(){return manualCourseActive()?(state.courseSettings?.courseName||tournament.venue||"Course not set"):tournament.venue;}
+function activeTeeName(){return manualCourseActive()?(state.courseSettings?.tee||tournament.tees||"Tee not set"):tournament.tees;}
 function courseValue(value,suffix=""){return Number.isFinite(value)?`${value}${suffix}`:"—";}
 function strokeIndexLabel(hole){
   if(!Number.isFinite(hole?.si))return "—";
@@ -383,6 +406,7 @@ async function loadWeather({force=false}={}) {
   }
   if(!navigator.onLine){state.weather={status:"offline"};saveLocalState();if(route==="home")render();return;}
   try{
+    if(!tournament.coordinates){state.weather={status:"location_missing"};saveLocalState();if(route==="home")render();return;}
     const {lat,lon}=tournament.coordinates;
     const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant&timezone=Australia%2FSydney&forecast_days=16`;
     const res=await fetch(url,{cache:force?"reload":"default"});
@@ -467,18 +491,22 @@ async function syncFromSupabase({quiet=false,fresh=false}={}){
   }
   const request=(async()=>{
   try{
-    const [tRes,hRes,sRes,cRes,pRes,gRes,nRes,csRes]=await Promise.all([
-      db.from("tournaments").select("id,current_hole,status,updated_at").eq("id",CONFIG.TOURNAMENT_ID).single(),
+    const [tRes,hRes,sRes,cRes,pRes,gRes,nRes,csRes,holesRes,teamsRes,contentRes]=await Promise.all([
+      db.from("tournaments").select("id,name,event_date,venue,tee,current_hole,status,updated_at").eq("id",CONFIG.TOURNAMENT_ID).single(),
       db.from("daily_handicaps").select("player_id,daily_handicap,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID),
       db.from("scores").select("hole_number,competitor_type,competitor_id,gross_score,picked_up,stableford_points,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID),
       db.from("side_competitions").select("competition_type,winner_player_id,result_text,hitting_order,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID),
       db.from("players").select("id,team_id,display_name,initials,profile_title,bio,photo_url,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID),
       db.from("course_guide").select("hole_number,coast_guide,writer_cup_plan,danger_note,local_rule_note,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID),
       db.from("player_notes").select("player_id,note_key,hole_number,note_text,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID),
-      db.from("course_settings").select("active_mode,manual_course_name,manual_tee,manual_holes,standard_si2_overrides,ntp_hole,longest_drive_hole,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID).maybeSingle()
+      db.from("course_settings").select("active_mode,manual_course_name,manual_tee,manual_holes,standard_si2_overrides,ntp_hole,longest_drive_hole,updated_at").eq("tournament_id",CONFIG.TOURNAMENT_ID).maybeSingle(),
+      db.from("holes").select("hole_number,par,stroke_index,metres,format").eq("tournament_id",CONFIG.TOURNAMENT_ID),
+      db.from("teams").select("id,name").eq("tournament_id",CONFIG.TOURNAMENT_ID),
+      db.from("writer_cup_event_content").select("tee_off_at,latitude,longitude,venue_story,extra_conditions,sponsors").eq("tournament_id",CONFIG.TOURNAMENT_ID).maybeSingle()
     ]);
-    const err=tRes.error||hRes.error||sRes.error||cRes.error||pRes.error||gRes.error||nRes.error||csRes.error;
+    const err=tRes.error||hRes.error||sRes.error||cRes.error||pRes.error||gRes.error||nRes.error||csRes.error||holesRes.error||teamsRes.error||contentRes.error;
     if(err)throw err;
+    applyEventMetadata(tRes.data,contentRes.data,holesRes.data,pRes.data,teamsRes.data);
     state.currentHole=tRes.data?.current_hole||state.currentHole;
     state.tournamentStatus=tRes.data?.status||state.tournamentStatus;
     if(state.tournamentStatus==="complete"){
@@ -513,7 +541,7 @@ async function syncFromSupabase({quiet=false,fresh=false}={}){
 function subscribeRealtime(){
   if(!db||realtimeChannel)return;
   const rerun=()=>syncFromSupabase({quiet:true});
-  realtimeChannel=db.channel("writer-cup-2026-v4")
+  realtimeChannel=db.channel(`writer-cup-realtime-${CONFIG.TOURNAMENT_ID}`)
     .on("postgres_changes",{event:"*",schema:"public",table:"tournaments",filter:`id=eq.${CONFIG.TOURNAMENT_ID}`},rerun)
     .on("postgres_changes",{event:"*",schema:"public",table:"scores",filter:`tournament_id=eq.${CONFIG.TOURNAMENT_ID}`},rerun)
     .on("postgres_changes",{event:"*",schema:"public",table:"daily_handicaps",filter:`tournament_id=eq.${CONFIG.TOURNAMENT_ID}`},rerun)
@@ -522,11 +550,12 @@ function subscribeRealtime(){
     .on("postgres_changes",{event:"*",schema:"public",table:"player_notes",filter:`tournament_id=eq.${CONFIG.TOURNAMENT_ID}`},rerun)
     .on("postgres_changes",{event:"*",schema:"public",table:"course_guide",filter:`tournament_id=eq.${CONFIG.TOURNAMENT_ID}`},rerun)
     .on("postgres_changes",{event:"*",schema:"public",table:"course_settings",filter:`tournament_id=eq.${CONFIG.TOURNAMENT_ID}`},rerun)
+    .on("postgres_changes",{event:"*",schema:"public",table:"writer_cup_active_event"},checkActiveEvent)
     .subscribe(status=>{if(status==="SUBSCRIBED"){state.connection="live";saveLocalState();renderAfterBackgroundUpdate();}});
 }
 
-function pendingWrites(){try{return JSON.parse(localStorage.getItem("writerCupPendingWritesV4")||"[]");}catch{return[];}}
-function setPendingWrites(items){localStorage.setItem("writerCupPendingWritesV4",JSON.stringify(items));}
+function pendingWrites(){try{return JSON.parse(localStorage.getItem(CONFIG.TOURNAMENT_ID==="writer-cup-2026"?"writerCupPendingWritesV4":`writerCupPendingWritesV10:${CONFIG.TOURNAMENT_ID}`)||"[]");}catch{return[];}}
+function setPendingWrites(items){localStorage.setItem(CONFIG.TOURNAMENT_ID==="writer-cup-2026"?"writerCupPendingWritesV4":`writerCupPendingWritesV10:${CONFIG.TOURNAMENT_ID}`,JSON.stringify(items));}
 function queueWrite(type,args){const q=pendingWrites();q.push({type,args,createdAt:new Date().toISOString()});setPendingWrites(q);}
 function isRoundLockedError(error){return /round is locked|completed round/i.test(error?.message||"");}
 async function rpcScorerWrite(functionName,args){
@@ -588,6 +617,7 @@ async function persistStandardSi2Override(hole,secondIndex){
 
 async function setCourseMode(mode){
   mode=mode==="manual"?"manual":"standard";
+  if(!isLegacyCup()&&mode!=="manual")return toast("This Cup uses its editable course setup");
   if(mode===state.courseSettings.activeMode)return toast(`${mode==="manual"?"Manual":"Standard"} Course is already active`);
   const stablefordScores=Object.keys(state.scores).some(h=>Number(h)>=7&&Object.keys(state.scores[h]||{}).length);
   if(stablefordScores)return toast("Course mode is locked after Stableford scoring has started");
@@ -673,12 +703,13 @@ function weatherCard(){
     return `<section class="card weather-card">
       <div class="weather-top"><div><div class="eyebrow">${daysUntilEvent()<=0?"TODAY'S CONDITIONS":"TOURNAMENT FORECAST"}</div><strong>${icon} ${label}</strong></div><span>${Math.round(w.max)}° / ${Math.round(w.min)}°</span></div>
       <div class="weather-grid"><div><small>RAIN</small><b>${Math.round(w.rain||0)}%</b></div><div><small>WIND</small><b>${compass(w.direction)} ${Math.round(wind)} km/h</b></div><div><small>GUSTS</small><b>${Math.round(gust)} km/h</b></div></div>
-      <div class="weather-note">At The Coast, the wind is the number to watch. Brent has been notified.</div>
+      <div class="weather-note">Forecast for ${escapeHTML(tournament.venue||"the host course")}. Confirm local conditions before tee-off.</div>
     </section>`;
   }
   if(w.status==="locked"){
-    return `<section class="card weather-card weather-locked"><div><div class="eyebrow">TOURNAMENT WEATHER</div><strong>🌬️ Forecast opens 7 days out</strong><p>${Math.max(0,w.daysUntil||daysUntilEvent())} days until Writer Cup. The card will automatically switch to the real Little Bay forecast during tournament week.</p></div></section>`;
+    return `<section class="card weather-card weather-locked"><div><div class="eyebrow">TOURNAMENT WEATHER</div><strong>🌬️ Forecast opens 7 days out</strong><p>${Math.max(0,w.daysUntil||daysUntilEvent())} days until Writer Cup. The card will automatically switch to the event forecast during tournament week.</p></div></section>`;
   }
+  if(w.status==="location_missing")return `<section class="card weather-card weather-locked"><strong>Forecast location not set</strong><p>Set the course coordinates in Event Setup to enable the forecast.</p></section>`;
   if(w.status==="offline")return `<section class="card weather-card weather-locked"><div class="eyebrow">TOURNAMENT WEATHER</div><strong>○ Offline</strong><p>The last forecast will return when this phone reconnects.</p></section>`;
   if(w.status==="unavailable")return `<section class="card weather-card weather-locked"><div class="eyebrow">TOURNAMENT WEATHER</div><strong>Forecast temporarily unavailable</strong><p>Scores still work. Weather will retry later.</p></section>`;
   return `<section class="card weather-card weather-locked"><div class="eyebrow">TOURNAMENT WEATHER</div><strong>Loading conditions…</strong></section>`;
@@ -707,14 +738,14 @@ function openPhotoModal(url,name){
 function homeView(){
   const c=countdownParts(),live=currentLiveStatus();
   return `<section class="hero">
-      <img class="hero-logo" src="./assets/writer-cup-logo.png" alt="" />
-      <div class="eyebrow">The Coast Golf Club</div><h1>Bigger. Better.<br>Brutal.</h1>
-      <p>Thursday 24 September 2026 · 7:00am tee off · Little Bay, NSW</p>
+      <img class="hero-logo" src="./assets/writer-cup-generic.svg" alt="" />
+      <div class="eyebrow">${escapeHTML(tournament.venue||"COURSE TO BE ANNOUNCED")}</div><h1>THE WRITER CUP<br>${eventYear()}</h1>
+      <p>${escapeHTML(new Date(tournament.date).toLocaleString('en-AU',{timeZone:'Australia/Sydney',weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'numeric',minute:'2-digit'}))} · ${escapeHTML(tournament.tees||"Tee TBC")} tees</p>
       <div class="countdown" id="countdown"><div><strong>${c.days}</strong><small>Days</small></div><div><strong>${c.hours}</strong><small>Hours</small></div><div><strong>${c.mins}</strong><small>Mins</small></div><div><strong>${c.secs}</strong><small>Secs</small></div></div>
     </section>
-    <div class="section-title"><h2>Tournament conditions</h2><span>Little Bay</span></div>${weatherCard()}
+    <div class="section-title"><h2>Tournament conditions</h2><span>${escapeHTML(tournament.venue||"Venue TBC")}</span></div>${weatherCard()}
     <div class="section-title"><h2>Writer Cup score</h2><span>First to 2½ wins</span></div>${cupScoreCard()}
-    <div class="section-title"><h2>Match centre</h2><span>2026 edition</span></div>
+    <div class="section-title"><h2>Match centre</h2><span>${eventYear()} edition</span></div>
     <section class="card match-card"><div class="live-pill">TOURNAMENT CENTRE</div>
       <div class="match-team-row"><div class="team"><strong>Berkeley Jail</strong><span>Ben · Joel · Defending champions</span></div><div class="vs">VS</div><div class="team"><strong>Itchy &amp; Scratchy</strong><span>Dylan · Brent · Challengers</span></div></div>
       <div class="big-status"><strong>${live.title}</strong><span>${live.subtitle}</span></div>
@@ -942,7 +973,7 @@ function courseView(){
   const parTotal=holes.every(h=>Number.isFinite(h.par))?holes.reduce((sum,h)=>sum+h.par,0):null;
   return `<div class="page-heading"><div class="eyebrow">${escapeHTML(activeCourseName())} · ${escapeHTML(activeTeeName())}</div><h1>Course Guide</h1><p>Writer Cup caddie plan, danger areas, local-rule reminders and shared player notes for every playable hole.</p></div>
     ${manualCourseActive()?'<div class="notice"><b>Course Guide note:</b> The written caddie guide remains based on the standard Coast layout. For altered temporary holes, follow club signage and instructions on the day.</div>':""}
-    <section class="card course-summary"><div><small>PAR</small><strong>${Number.isFinite(parTotal)?parTotal:"—"}</strong></div><div><small>${manualCourseActive()?"METRES ENTERED":"WHITE TEES"}</small><strong>${total?`${total}m`:"—"}</strong></div><div><small>${manualCourseActive()?"SET UP":"CURRENT"}</small><strong>${manualCourseActive()?`${configured}/18`:`Hole ${state.currentHole}`}</strong></div></section>
+    <section class="card course-summary"><div><small>PAR</small><strong>${Number.isFinite(parTotal)?parTotal:"—"}</strong></div><div><small>${manualCourseActive()?"METRES ENTERED":escapeHTML(tournament.tees||"TEES")}</small><strong>${total?`${total}m`:"—"}</strong></div><div><small>${manualCourseActive()?"SET UP":"CURRENT"}</small><strong>${manualCourseActive()?`${configured}/18`:`Hole ${state.currentHole}`}</strong></div></section>
     <div class="section-title"><h2>Choose a hole</h2><span>Tap for full guide</span></div>
     <div class="hole-grid">${holes.map(h=>`<button class="hole-tile ${h.n===state.currentHole?"current":""}" data-hole="${h.n}"><div><small>HOLE</small><strong>${h.n}</strong></div><span>Par ${courseValue(h.par)} · ${courseValue(h.m,"m")}</span><em>SI ${strokeIndexLabel(h)}</em><b>${fmtForHole(h.n).short}</b>${h.n===ntpHoleNumber()?'<i>🎯 NTP</i>':""}${h.n===longestDriveHoleNumber()?'<i>🚀 LD</i>':""}</button>`).join("")}</div>`;
 }
@@ -978,16 +1009,16 @@ function holeView(){
   const h=activeHole(selectedCourseHole),g=guideFor(h.n),fmt=fmtForHole(h.n);
   const specials=[];if(h.n===ntpHoleNumber())specials.push("🎯 WRITER CUP NTP");if(h.n===longestDriveHoleNumber())specials.push("🚀 WRITER CUP LONGEST DRIVE");
   return `<div class="page-heading"><div class="eyebrow">Course Guide · Hole ${h.n}</div><h1>Hole ${h.n}</h1><p>${fmt.name}</p></div>
-    <section class="card hole-guide-hero"><div class="hole-guide-number">${h.n}</div><div class="hole-guide-stats"><span>PAR <b>${courseValue(h.par)}</b></span><span>${manualCourseActive()?"METRES":"WHITE"} <b>${courseValue(h.m,"m")}</b></span><span>INDEX <b>${strokeIndexLabel(h)}</b></span></div>${specials.length?`<div class="special-chip">${specials.join(" · ")}</div>`:""}</section>
+    <section class="card hole-guide-hero"><div class="hole-guide-number">${h.n}</div><div class="hole-guide-stats"><span>PAR <b>${courseValue(h.par)}</b></span><span>${manualCourseActive()?"METRES":escapeHTML(tournament.tees||"TEES")} <b>${courseValue(h.m,"m")}</b></span><span>INDEX <b>${strokeIndexLabel(h)}</b></span></div>${specials.length?`<div class="special-chip">${specials.join(" · ")}</div>`:""}</section>
     <div class="hole-nav"><button id="previousGuide" ${h.n===1?"disabled":""}>‹ PREV</button><button data-route="course">ALL HOLES</button><button id="nextGuide" ${h.n===18?"disabled":""}>NEXT ›</button></div>
     ${manualCourseActive()&&!holeSetupComplete(h)?'<div class="notice warning"><b>Manual hole not set up yet.</b> Enter Par and Stroke Index from the scoring screen or Course Setup before saving this hole.</div>':""}
-    <section class="card guide-section"><div class="guide-label">THE COAST · STANDARD PLAYING GUIDE</div><p>${escapeHTML(g.coast_guide||"Guide loading…")}</p></section>
+    <section class="card guide-section"><div class="guide-label">${escapeHTML(activeCourseName().toUpperCase())} · PLAYING GUIDE</div><p>${escapeHTML(g.coast_guide||"Confirm the official scorecard and local rules at the course.")}</p></section>
     <section class="card guide-section writer-plan"><div class="guide-label">🏆 WRITER CUP PLAN</div><p>${escapeHTML(g.writer_cup_plan||"Play the match in front of you.")}</p></section>
-    <section class="card guide-section danger-guide"><div class="guide-label">⚠️ DANGER</div><p>${escapeHTML(g.danger_note||"Respect the wind and keep the ball in play.")}</p></section>
+    <section class="card guide-section danger-guide"><div class="guide-label">⚠️ DANGER</div><p>${escapeHTML(g.danger_note||"Keep the ball in play.")}</p></section>
     <section class="card guide-section local-guide"><div class="guide-label">📍 LOCAL RULE REMINDER</div><p>${escapeHTML(g.local_rule_note||"Check the official Local Rules and course markings before play.")}</p></section>
     ${h.n===longestDriveHoleNumber()?longestDriveDrawGuidePanel():""}
     ${playerNotesForHole(h.n)}
-    <a class="secondary-button link-button" href="https://www.coastgolf.com.au/cms/course-tour/hole-${h.n}/" target="_blank" rel="noopener">OFFICIAL COAST HOLE PAGE ↗</a>
+    ${isLegacyCup()?`<a class="secondary-button link-button" href="https://www.coastgolf.com.au/cms/course-tour/hole-${h.n}/" target="_blank" rel="noopener">OFFICIAL COAST HOLE PAGE ↗</a>`:""}
     <button class="primary-button" id="scoreThisHole">SCORE HOLE ${h.n}</button>`;
 }
 function individualStats(name){
@@ -1081,21 +1112,23 @@ function manualCourseSetupView(){
   const cs=state.courseSettings,holes=normalizeManualHoles(cs.holes),h=holes[selectedManualHole-1],configured=holes.filter(holeSetupComplete).length;
   const options=Array.from({length:18},(_,i)=>`<option value="${i+1}" ${(i+1)===Number(cs.ntpHole)?"selected":""}>Hole ${i+1}</option>`).join("");
   const ldOptions=Array.from({length:18},(_,i)=>`<option value="${i+1}" ${(i+1)===Number(cs.longestDriveHole)?"selected":""}>Hole ${i+1}</option>`).join("");
-  return `<div class="page-heading"><div class="eyebrow">Scorer controlled</div><h1>Course Setup</h1><p>Standard Course stays preloaded. Manual Course is a universal 18-hole backup that can be completed progressively from this phone.</p></div>
-    <section class="card settings-card"><strong>ACTIVE COURSE</strong><p><b>${manualCourseActive()?"Manual Course":"Standard Course · The Coast"}</b></p><div class="course-mode-buttons"><button class="course-mode-button ${manualCourseActive()?"":"selected"}" id="activateStandardCourse" aria-pressed="${manualCourseActive()?"false":"true"}" ${manualCourseActive()?"":"disabled"}>USE STANDARD</button><button class="course-mode-button ${manualCourseActive()?"selected":""}" id="activateManualCourse" aria-pressed="${manualCourseActive()?"true":"false"}" ${manualCourseActive()?"disabled":""}>USE MANUAL</button></div><small>Switching is locked once Stableford scoring has started. If Manual Course may be needed, activate it before the round and enter each hole as you reach it.</small></section>
+  return `<div class="page-heading"><div class="eyebrow">Scorer controlled</div><h1>Course Setup</h1><p>${isLegacyCup()?"Standard Course stays preloaded. Manual Course can be completed progressively.":"Enter the selected course’s 18 holes from its current scorecard. You can adjust any hole on the day."}</p></div>
+    <section class="card settings-card"><strong>ACTIVE COURSE</strong><p><b>${manualCourseActive()?escapeHTML(activeCourseName()):`Standard Course · ${escapeHTML(tournament.venue)}`}</b></p><div class="course-mode-buttons" ${isLegacyCup()?"":"hidden"}><button class="course-mode-button ${manualCourseActive()?"":"selected"}" id="activateStandardCourse" aria-pressed="${manualCourseActive()?"false":"true"}" ${manualCourseActive()?"":"disabled"}>USE STANDARD</button><button class="course-mode-button ${manualCourseActive()?"selected":""}" id="activateManualCourse" aria-pressed="${manualCourseActive()?"true":"false"}" ${manualCourseActive()?"disabled":""}>USE MANUAL</button></div>${isLegacyCup()?"<small>Switching is locked once Stableford scoring has started.</small>":"<small>This Cup uses its own editable 18-hole course.</small>"}</section>
     <section class="card settings-card"><strong>MANUAL COURSE OPTIONS</strong><p>${configured}/18 holes currently have Par + SI entered.</p><label class="field-label">COURSE NAME · OPTIONAL<input id="manualCourseName" maxlength="80" value="${escapeHTML(cs.courseName||"")}" placeholder="e.g. The Coast · Temporary Routing"></label><label class="field-label">TEE · OPTIONAL<input id="manualCourseTee" maxlength="40" value="${escapeHTML(cs.tee||"")}" placeholder="White / Gold / Red / Blue"></label><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label class="field-label">🎯 NTP HOLE<select id="manualNtpHole" style="min-height:56px;font-size:1.05rem;font-weight:800;padding:0 12px">${options}</select></label><label class="field-label">🚀 LONGEST DRIVE<select id="manualLdHole" style="min-height:56px;font-size:1.05rem;font-weight:800;padding:0 12px">${ldOptions}</select></label></div><button class="secondary-button" id="saveManualCourseOptions" style="margin-top:18px">SAVE COURSE OPTIONS</button><small>Longest Drive's random 1–4 tee order stays attached to the Longest Drive competition wherever you move it.</small></section>
-    <div class="section-title"><h2>Manual holes</h2><span>${configured}/18 ready</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">${holes.map(x=>`<button class="secondary-button manual-hole-pick" data-manual-hole="${x.n}" style="padding:10px 6px;${x.n===selectedManualHole?"outline:2px solid var(--gold);":""}"><b>H${x.n}</b><small style="display:block">${holeSetupComplete(x)?`P${x.par} · SI${strokeIndexLabel(x)}`:"Not set"}</small></button>`).join("")}</div>
+    <div class="section-title"><h2>Course holes</h2><span>${configured}/18 ready</span></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">${holes.map(x=>`<button class="secondary-button manual-hole-pick" data-manual-hole="${x.n}" style="padding:10px 6px;${x.n===selectedManualHole?"outline:2px solid var(--gold);":""}"><b>H${x.n}</b><small style="display:block">${holeSetupComplete(x)?`P${x.par} · SI${strokeIndexLabel(x)}`:"Not set"}</small></button>`).join("")}</div>
     <section class="card settings-card"><strong>HOLE ${h.n}</strong><p>${holeSetupComplete(h)?`Par ${h.par} · SI ${strokeIndexLabel(h)}${Number.isFinite(h.m)?` · ${h.m}m`:""}`:"Enter Par and Stroke Index before scoring this hole."}</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label class="field-label">PAR<input id="manualSetupPar" inputmode="numeric" value="${manualHoleInputValue(h.par)}" placeholder="4"></label><label class="field-label">SI<input id="manualSetupSi" inputmode="numeric" value="${manualHoleInputValue(h.si)}" placeholder="1–18"></label><label class="field-label">2ND SI · OPTIONAL<input id="manualSetupSi2" inputmode="numeric" value="${manualHoleInputValue(h.si2)}" placeholder="19–36"></label><label class="field-label">METRES · OPTIONAL<input id="manualSetupMetres" inputmode="numeric" value="${manualHoleInputValue(h.m)}" placeholder="optional"></label></div><small>If the scorecard shows a split index such as <b>3 / 22</b>, enter 3 as SI and 22 as 2ND SI. Leave 2ND SI blank on a normal 1–18 card.</small><button class="primary-button" id="saveManualSetupHole">SAVE HOLE ${h.n}</button><button class="text-button" id="clearManualSetupHole">CLEAR HOLE ${h.n} VALUES</button></section>
     <button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
 }
 function sponsorsView(){
-  const sponsors=["TEMU","2 P’s On A Pod Podcast","AMPOL","Guzman y Gomez","Srixon","Titleist","LSKD","Wesley Mission","Tri-Lite Golf Buggies","The Coast Golf & Recreation Club","Hahn Beer"];
-  return `<div class="page-heading"><div class="eyebrow">Writer Cup 2026</div><h1>Sponsors &amp; Partners</h1><p>The organisations helping keep the Writer Cup unnecessarily professional.</p></div>
+  const sponsors=Array.isArray(eventContent.sponsors)?eventContent.sponsors:["TEMU","2 P’s On A Pod Podcast","AMPOL","Guzman y Gomez","Srixon","Titleist","LSKD","Wesley Mission","Tri-Lite Golf Buggies","The Coast Golf & Recreation Club","Hahn Beer"];
+  return `<div class="page-heading"><div class="eyebrow">${escapeHTML(tournament.name)}</div><h1>Sponsors &amp; Partners</h1><p>The organisations helping keep the Writer Cup unnecessarily professional.</p></div>
     <section class="sponsor-grid">${sponsors.map((name,i)=>`<div class="card sponsor-card"><span>${String(i+1).padStart(2,"0")}</span><strong>${escapeHTML(name)}</strong></div>`).join("")}</section>
     <button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
 }
 
 function aboutCoastView(){
+  if(!isLegacyCup())return `<div class="page-heading"><div class="eyebrow">${escapeHTML(tournament.name)}</div><h1>About ${escapeHTML(tournament.venue)}</h1><p>${escapeHTML(tournament.tees)} tees · ${escapeHTML(tournament.eventDate)}</p></div>
+    <section class="card rule-card"><p>${nl2br(eventContent.venue_story||"Venue information can be added in Event Setup once the course is confirmed.")}</p></section><button class="secondary-button" data-route="more">BACK</button>`;
   return `<div class="page-heading"><div class="eyebrow">The Writer Cup venue</div><h1>About The Coast</h1><p>A course with a story.</p></div>
     <section class="card rule-card">
     <p>The Coast Golf Club sits beside the ocean at Little Bay in Sydney. Its official address is 1 Coast Hospital Road, Little Bay NSW 2036.</p>
@@ -1110,22 +1143,29 @@ function aboutCoastView(){
 }
 function moreView(){
   return `<div class="page-heading"><div class="eyebrow">Writer Cup HQ · ${connectionLabel()}</div><h1>Tournament HQ</h1><p>Profiles, scorecard, rules and tournament settings.</p></div>
-    <a class="secondary-button link-button" href="./postcup.html">🏆 CUP ARCHIVE · WRAP-UP · PHOTOS</a>
     ${devicePlayerPanel()}${handicapsPanel()}
-    <div class="section-title"><h2>Honours</h2><span>2026 side competitions</span></div><div class="sidegame-grid"><section class="card sidegame"><strong>🎯 Hole ${ntpHoleNumber()} · Nearest to the Pin</strong><div class="winner">${escapeHTML(state.sideGames.ntpWinner||"Not decided")}</div><small>${escapeHTML(state.sideGames.ntpDistance||"Ball must finish on the green")}</small></section><section class="card sidegame"><strong>🚀 Hole ${longestDriveHoleNumber()} · Longest Drive</strong><div class="winner">${escapeHTML(state.sideGames.longestWinner||"Not decided")}</div><small>${state.sideGames.driveOrder.length?`Order: ${state.sideGames.driveOrder.map(displayNameForKey).join(" · ")}`:"Ball must finish on the fairway"}</small></section></div>
-    <div class="section-title"><h2>Tournament</h2><span>Writer Cup 2026</span></div><section class="card menu-list">
-      <button data-action="courseSetup"><span><strong>🛠️ Course Setup</strong><small>Standard or Manual emergency course</small></span><span>›</span></button>
-      <button data-action="aboutCoast"><span><strong>🌊 About The Coast</strong><small>Location, neighbours and club history</small></span><span>›</span></button>
+    <div class="section-title"><h2>Honours</h2><span>Side competitions</span></div><div class="sidegame-grid"><section class="card sidegame"><strong>🎯 Hole ${ntpHoleNumber()} · Nearest to the Pin</strong><div class="winner">${escapeHTML(state.sideGames.ntpWinner||"Not decided")}</div><small>${escapeHTML(state.sideGames.ntpDistance||"Ball must finish on the green")}</small></section><section class="card sidegame"><strong>🚀 Hole ${longestDriveHoleNumber()} · Longest Drive</strong><div class="winner">${escapeHTML(state.sideGames.longestWinner||"Not decided")}</div><small>${state.sideGames.driveOrder.length?`Order: ${state.sideGames.driveOrder.map(displayNameForKey).join(" · ")}`:"Ball must finish on the fairway"}</small></section></div>
+    <div class="section-title"><h2>Tournament</h2><span>${escapeHTML(tournament.name)}</span></div><section class="card menu-list">
+      <a class="tournament-menu-link" href="./postcup.html"><span><strong>🏆 Cup Archive</strong><small>Past results and scorecards</small></span><span aria-hidden="true">›</span></a>
+      <a class="tournament-menu-link" href="./newcup.html"><span><strong>🗓️ Event Setup</strong><small>Prepare the next Writer Cup</small></span><span aria-hidden="true">›</span></a>
+      <button data-action="courseSetup"><span><strong>🛠️ Course Setup</strong><small>Edit the course for this Cup</small></span><span>›</span></button>
+      <button data-action="aboutCoast"><span><strong>🌊 ${isLegacyCup()?"About The Coast":"About the Course"}</strong><small>${isLegacyCup()?"Location, neighbours and club history":"Venue story and course details"}</small></span><span>›</span></button>
       <button data-action="players"><span><strong>🏌️ Player Profiles</strong><small>Photos, bios, stats and notes</small></span><span>›</span></button>
       <button data-action="card"><span><strong>▦ Full Scorecard</strong><small>All 18 holes and indexes</small></span><span>›</span></button>
       <button data-action="rules"><span><strong>📜 Official Match Rules</strong><small>Formats, honours and Cup scoring</small></span><span>›</span></button>
-      <button data-action="sponsors"><span><strong>🤝 Sponsors &amp; Partners</strong><small>Writer Cup 2026 supporters</small></span><span>›</span></button>
-      <button data-action="weather"><span><strong>🌬️ Refresh Weather</strong><small>Tournament-week Little Bay forecast</small></span><span>›</span></button>
+      <button data-action="sponsors"><span><strong>🤝 Sponsors &amp; Partners</strong><small>Current Cup supporters</small></span><span>›</span></button>
+      <button data-action="weather"><span><strong>🌬️ Refresh Weather</strong><small>Tournament-week course forecast</small></span><span>›</span></button>
       <button data-action="refresh"><span><strong>↻ Refresh Live Data</strong><small>Pull latest Supabase data</small></span><span>›</span></button>
       <button data-action="lock"><span><strong>🔒 Lock Scorer Mode</strong><small>Forget scorer PIN on this device</small></span><span>›</span></button>
     </section>`;
 }
 function rulesView(){
+  if(!isLegacyCup())return `<div class="page-heading"><div class="eyebrow">Official Match Rules</div><h1>${escapeHTML(tournament.name)}</h1><p>18 holes · 4 Writer Cup points.</p></div>
+    <section class="card rule-card"><h2>Holes 1–6 · Scramble</h2><p>Both players tee off, the team selects one ball, and the partners alternate shots until holed. Lower team gross wins the hole; a tied hole is halved. The team with more holes after six wins 1 Cup point; a tied match splits the point.</p></section>
+    <section class="card rule-card"><h2>Holes 7–12 · Combined Stableford</h2><p>All four players score their own ball. The two teammates’ Stableford points are added each hole; the higher total wins that hole. More holes won earns 1 Cup point, with a tie worth ½ each.</p></section>
+    <section class="card rule-card"><h2>Holes 13–18 · Aggregate Singles</h2><p>Ben plays Dylan; Joel plays Brent. Each player’s Stableford points accumulate across six holes. The higher six-hole total wins their match and 1 Cup point, or ½ each if level.</p></section>
+    <section class="card rule-card"><h2>Match conditions</h2><p>Daily handicaps and the current course setup apply. A picked-up Stableford ball scores zero points. Nearest to the Pin is on Hole ${ntpHoleNumber()}; the ball must finish on the green. Longest Drive is on Hole ${longestDriveHoleNumber()}; the ball must finish on the fairway. No gimmies. Berkeley Jail retain on a 2–2 draw. Follow the host club’s current Local Rules.</p>${eventContent.extra_conditions?`<p>${nl2br(eventContent.extra_conditions)}</p>`:""}</section>
+    <button class="secondary-button" data-route="more">BACK TO TOURNAMENT HQ</button>`;
   return `<div class="page-heading"><div class="eyebrow">Official Match Rules</div><h1>Writer Cup 2026</h1><p>18 holes · 4 Writer Cup points.</p></div>
     <section class="card rule-card"><div class="rule-kicker">HOLES 1–6 · 1 POINT</div><h2>Writer Cup Scramble</h2><p>Both players from each team tee off. Tee shots should alternate between the teams rather than one team hitting twice in a row, for example <b>Joel, Dylan, Ben, Brent</b>. The team chooses which tee ball to continue with. The player whose tee ball is <b>not</b> selected plays the next shot. From that point, the partners alternate shots until the ball is holed.</p><p>Lower team gross score wins the hole. Equal scores halve the hole. Most holes won takes the match point; a tied six-hole match gives ½ point each.</p><div class="rule-callout"><b>Hole ${ntpHoleNumber()} · Nearest to the Pin</b><br>All four normal Writer Cup tee shots on the selected NTP hole are eligible. The ball must finish on the putting green.</div></section>
     <section class="card rule-card"><div class="rule-kicker">HOLES 7–12 · 1 POINT</div><h2>Four-Ball · Combined Team Stableford</h2><p>All four players play their own ball. Stableford is calculated for each player using the official Daily Handicap and the White Tee stroke index.</p><p>Ben and Joel's Stableford points are <b>added together</b> for Berkeley Jail. Dylan and Brent's points are added together for Itchy &amp; Scratchy. The higher combined team Stableford total wins the hole; equal totals halve the hole. Most holes won takes the match point, with ½ point each if tied after Hole 12.</p></section>
@@ -1192,7 +1232,7 @@ async function finaliseRound(){
   const pin=scorerPin();if(!pin)return toast("Unlock scorer mode before finalising the round");
   if(!window.confirm("FINALISE AND LOCK THE OFFICIAL RESULTS?\n\nScores, handicaps, course settings, NTP and Longest Drive will become read-only. Reopening requires the scorer PIN."))return;
   toast("Finalising official results…");
-  const{error}=await db.rpc("writer_cup_finalise_round",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_pin:pin});
+  const{error}=await db.rpc("writer_cup_finalise_v10",{p_tournament_id:CONFIG.TOURNAMENT_ID,p_pin:pin});
   if(error){
     if((error.message||"").toLowerCase().includes("invalid scorer pin")){clearScorerPin();toast("Incorrect scorer PIN");render();return;}
     toast(error.message||"Round could not be finalised");return;
@@ -1483,23 +1523,41 @@ function bindViewEvents(){
   }
 }
 
+async function checkActiveEvent(){
+  if(!db||!navigator.onLine)return true;
+  const {data,error}=await db.from("writer_cup_active_event").select("tournament_id").eq("singleton",true).single();
+  if(error||!data?.tournament_id)return true;
+  if(data.tournament_id===CONFIG.TOURNAMENT_ID)return true;
+  clearScorerPin();
+  localStorage.setItem("writerCupActiveEventId",data.tournament_id);
+  window.location.reload();
+  return false;
+}
+
 document.querySelectorAll(".nav-item").forEach(el=>el.onclick=()=>navigate(el.dataset.route));
 document.querySelector(".brand-button").onclick=()=>navigate("home");
 document.getElementById("moreButton").onclick=()=>navigate("more");
 
 window.addEventListener("keydown",e=>{if(e.key==="Escape")closePhotoModal();});
-window.addEventListener("online",()=>{state.connection="connecting";saveLocalState();syncFromSupabase({quiet:true}).then(flushPendingWrites);loadWeather();});
+window.addEventListener("online",async()=>{if(!await checkActiveEvent())return;state.connection="connecting";saveLocalState();syncFromSupabase({quiet:true}).then(flushPendingWrites);loadWeather();});
 window.addEventListener("offline",()=>{state.connection="offline";saveLocalState();renderAfterBackgroundUpdate();});
-document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshWeatherAtUnlock();});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden){void checkActiveEvent();refreshWeatherAtUnlock();}});
 setInterval(refreshWeatherAtUnlock,1000);
 
 // Older profile-save failures were incorrectly queued as offline writes.
 // Profile text now saves online with explicit verification, so discard only those stale profile writes.
 setPendingWrites(pendingWrites().filter(item=>item.type!=="writer_cup_update_player_profile"));
 
-render();
-loadWeather();
-syncFromSupabase({quiet:true}).then(()=>{subscribeRealtime();flushPendingWrites();});
+async function startCup(){
+  if(!await checkActiveEvent())return;
+  updateEventHeading();
+  render();
+  await syncFromSupabase({quiet:true});
+  subscribeRealtime();
+  await flushPendingWrites();
+  loadWeather();
+}
+void startCup();
 setInterval(()=>{if(route==="home"){const c=countdownParts(),el=document.getElementById("countdown");if(el)el.innerHTML=`<div><strong>${c.days}</strong><small>Days</small></div><div><strong>${c.hours}</strong><small>Hours</small></div><div><strong>${c.mins}</strong><small>Mins</small></div><div><strong>${c.secs}</strong><small>Secs</small></div>`;}},1000);
 
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));

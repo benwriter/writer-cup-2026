@@ -1,0 +1,15 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#001638"><title>Writer Cup · Event Setup</title><link rel="stylesheet" href="./postcup.css?v=10-1"></head><body><header><a href="./">← Writer Cup</a><span>TOURNAMENT SETUP</span></header><main>
+<p class="eyebrow">THE NEXT CHAPTER</p><h1>Event Setup</h1><p>Prepare the next Cup without changing any completed scorecard. Use the current event’s scorer PIN.</p>
+<p id="status" role="status" aria-live="polite">Loading the current Cup…</p><section class="card" id="active" hidden></section>
+<section class="card" id="desk" hidden><h2 id="formTitle">Create next year's Cup</h2><p id="formHelp"></p>
+<form id="cupForm">
+<label>Current Cup scorer PIN<input id="pin" type="password" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" required autocomplete="off"></label>
+<label>Tournament date<input id="date" type="date" required></label>
+<label>Tee-off time (Sydney local time)<input id="time" type="time" required value="07:00"></label>
+<label>Course / venue<input id="venue" maxlength="80" required placeholder="Next year’s host course"></label>
+<label>Tees<input id="tee" maxlength="40" required placeholder="White, Gold, Blue…"></label>
+<details><summary>Weather coordinates (optional)</summary><p>Enter the course’s latitude and longitude if you want its seven-day forecast. You can add them later.</p><label>Latitude<input id="latitude" type="number" step="any" min="-90" max="90" placeholder="e.g. -33.98"></label><label>Longitude<input id="longitude" type="number" step="any" min="-180" max="180" placeholder="e.g. 151.25"></label></details>
+<div id="eventExtras" hidden><label>About the course<textarea id="story" maxlength="3000" rows="4" placeholder="A short introduction to this year’s venue"></textarea></label><label>Additional match conditions<textarea id="conditions" maxlength="6000" rows="5" placeholder="2027-only rules, logistics or traditions"></textarea></label><label>Sponsors (one per line)<textarea id="sponsors" rows="6" placeholder="Sponsor names"></textarea></label></div>
+<button id="submit" type="submit">CREATE NEW CUP</button></form></section>
+<p class="note">The current match format remains Scramble, Combined Team Stableford and Aggregate Singles, with the same four players. After creating a Cup, enter the official 18-hole scorecard in Course Setup and update handicaps before play.</p>
+</main><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.js"></script><script src="./config.js"></script><script src="./newcup.js?v=10-1"></script></body></html>
