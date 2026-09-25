@@ -738,7 +738,7 @@ function openPhotoModal(url,name){
 function homeView(){
   const c=countdownParts(),live=currentLiveStatus();
   return `<section class="hero">
-      <img class="hero-logo" src="./assets/writer-cup-generic.svg" alt="" />
+      <img class="hero-logo" src="./assets/writer-cup-default.png" alt="" />
       <div class="eyebrow">${escapeHTML(tournament.venue||"COURSE TO BE ANNOUNCED")}</div><h1>THE WRITER CUP<br>${eventYear()}</h1>
       <p>${escapeHTML(new Date(tournament.date).toLocaleString('en-AU',{timeZone:'Australia/Sydney',weekday:'long',day:'numeric',month:'long',year:'numeric',hour:'numeric',minute:'2-digit'}))} · ${escapeHTML(tournament.tees||"Tee TBC")} tees</p>
       <div class="countdown" id="countdown"><div><strong>${c.days}</strong><small>Days</small></div><div><strong>${c.hours}</strong><small>Hours</small></div><div><strong>${c.mins}</strong><small>Mins</small></div><div><strong>${c.secs}</strong><small>Secs</small></div></div>
